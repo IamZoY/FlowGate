@@ -1,0 +1,46 @@
+services:
+  flowgate:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/config.yaml:ro
+      - flowgate-data:/data
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-changeme_32_char_dev_key_0000000}
+    command: ["--config", "/config.yaml"]
+    depends_on:
+      - minio-src
+      - minio-dst
+    restart: unless-stopped
+
+  minio-src:
+    image: ghcr.io/iamzoy/minio:release.2026-01-02t17-54-56z
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-src-data:/data
+    restart: unless-stopped
+
+  minio-dst:
+    image: ghcr.io/iamzoy/minio:release.2026-01-02t17-54-56z
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-dst-data:/data
+    restart: unless-stopped
+
+volumes:
+  flowgate-data:
+  minio-src-data:
+  minio-dst-data:

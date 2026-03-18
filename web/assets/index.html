@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlowGate</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav id="sidebar">
+  <div id="sidebar-header">Flow<span>Gate</span></div>
+  <div id="sidebar-tagline">S3 object transfer gateway</div>
+  <div id="group-list"></div>
+  <div id="sidebar-footer">
+    <button id="btn-new-group">+ New Group</button>
+  </div>
+</nav>
+
+<!-- Main -->
+<div id="main">
+
+  <!-- Stats bar -->
+  <div id="stats-bar">
+    <div class="stat-item">
+      <div class="stat-label">Total</div>
+      <div class="stat-value" id="stat-total">0</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Success</div>
+      <div class="stat-value" id="stat-success" style="color:#3dba72">0</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Failed</div>
+      <div class="stat-value" id="stat-failed" style="color:#e05252">0</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Queued</div>
+      <div class="stat-value" id="stat-pending" style="color:#4f8ef7">0</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-label">Bytes</div>
+      <div class="stat-value" id="stat-bytes">0 B</div>
+    </div>
+    <div id="ws-status">
+      <div id="ws-dot"></div>
+      <span id="ws-label">Connecting…</span>
+    </div>
+  </div>
+
+  <!-- Content area -->
+  <div id="content">
+    <div class="empty-state" style="margin-top:60px">
+      <strong>Select a group</strong>
+      <p>Choose a group from the left sidebar or create a new one.</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <div id="modal-header">
+      <h3></h3>
+      <button id="modal-close">&times;</button>
+    </div>
+    <div id="modal-body"></div>
+    <div id="modal-footer"></div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
