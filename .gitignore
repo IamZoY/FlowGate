@@ -1,0 +1,37 @@
+# Binaries
+flowgate
+flowgate.exe
+*.exe
+*.dll
+*.so
+*.dylib
+dist/
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Config with secrets
+config.yaml
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+deployment/
+*.tar.gz
+
+# Test
+coverage.out
+coverage.html

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -23,9 +24,21 @@ import (
 	"github.com/ali/flowgate/web"
 )
 
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildTime = "unknown"
+)
+
 func main() {
+	showVersion := flag.Bool("version", false, "print version and exit")
 	cfgPath := flag.String("config", "config.yaml", "path to config file")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("flowgate %s (commit: %s, built: %s)\n", version, commit, buildTime)
+		os.Exit(0)
+	}
 
 	// 1. Load configuration.
 	cfg, err := config.Load(*cfgPath)
