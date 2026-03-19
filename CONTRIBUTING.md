@@ -19,7 +19,7 @@ Be respectful, constructive, and inclusive. We are all here to build something u
 
 ```bash
 # Fork and clone
-git clone https://github.com/<your-username>/flowgate.git
+git clone https://github.com/<your-username>/FlowGate.git
 cd flowgate
 
 # Install dependencies
@@ -55,7 +55,7 @@ web/assets/           Embedded SPA (HTML/JS/CSS)
 
 ### Reporting Bugs
 
-1. Check [existing issues](https://github.com/ali/flowgate/issues) to avoid duplicates.
+1. Check [existing issues](https://github.com/IamZoY/FlowGate/issues) to avoid duplicates.
 2. Open a new issue with:
    - A clear, descriptive title
    - Steps to reproduce
@@ -160,4 +160,4 @@ The release workflow:
 
 ## Questions?
 
-Open an issue or start a [Discussion](https://github.com/ali/flowgate/discussions). We're happy to help!
+Open an issue or start a [Discussion](https://github.com/IamZoY/FlowGate/discussions). We're happy to help!

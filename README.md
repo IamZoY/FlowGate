@@ -1,9 +1,11 @@
 # FlowGate
 
-[![CI](https://github.com/ali/flowgate/actions/workflows/ci.yml/badge.svg)](https://github.com/ali/flowgate/actions/workflows/ci.yml)
-[![Release](https://github.com/ali/flowgate/actions/workflows/release.yml/badge.svg)](https://github.com/ali/flowgate/actions/workflows/release.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ali/flowgate)](https://goreportcard.com/report/github.com/ali/flowgate)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)](https://go.dev)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/IamZoY/FlowGate?color=green)](https://github.com/IamZoY/FlowGate/releases)
+[![Downloads](https://img.shields.io/github/downloads/IamZoY/FlowGate/total?color=purple)](https://github.com/IamZoY/FlowGate/releases)
+[![Build](https://github.com/IamZoY/FlowGate/actions/workflows/ci.yml/badge.svg)](https://github.com/IamZoY/FlowGate/actions/workflows/ci.yml)
+[![Release](https://github.com/IamZoY/FlowGate/actions/workflows/release.yml/badge.svg)](https://github.com/IamZoY/FlowGate/actions/workflows/release.yml)
 
 **Lightweight S3 object transfer gateway for MinIO.** FlowGate receives webhook events when objects are created, streams them from source to destination buckets in real-time, and provides a live web dashboard for monitoring. Purpose-built for air-gapped deployments.
 
@@ -50,7 +52,7 @@
 ### Option 1: Docker Compose (recommended)
 
 ```bash
-git clone https://github.com/ali/flowgate.git
+git clone https://github.com/IamZoY/FlowGate.git
 cd flowgate
 cp config.example.yaml config.yaml
 
@@ -64,7 +66,7 @@ The dashboard is available at `http://localhost:8080`.
 
 ### Option 2: Binary
 
-Download a prebuilt binary from the [Releases](https://github.com/ali/flowgate/releases) page, verify the checksum, and run:
+Download a prebuilt binary from the [Releases](https://github.com/IamZoY/FlowGate/releases) page, verify the checksum, and run:
 
 ```bash
 # Verify checksum (Linux/macOS)
@@ -78,7 +80,7 @@ chmod +x flowgate-*
 ### Option 3: Build from Source
 
 ```bash
-git clone https://github.com/ali/flowgate.git
+git clone https://github.com/IamZoY/FlowGate.git
 cd flowgate
 make build
 ./flowgate --config config.example.yaml
@@ -215,7 +217,7 @@ Open the dashboard at `http://localhost:8080` to see transfers in real-time.
 
 ### Download
 
-Go to the [Releases](https://github.com/ali/flowgate/releases) page and download the binary for your platform:
+Go to the [Releases](https://github.com/IamZoY/FlowGate/releases) page and download the binary for your platform:
 
 | Platform | Binary |
 |----------|--------|
@@ -277,7 +279,7 @@ docker run -d \
   -e SECRET_KEY=$(openssl rand -hex 32) \
   -v $(pwd)/config.yaml:/config.yaml:ro \
   -v flowgate-data:/data \
-  ghcr.io/ali/flowgate:latest \
+  ghcr.io/iamzoy/flowgate:latest \
   --config /config.yaml
 ```
 
@@ -299,7 +301,7 @@ cd deployment
 
 ```bash
 # Clone
-git clone https://github.com/ali/flowgate.git
+git clone https://github.com/IamZoY/FlowGate.git
 cd flowgate
 
 # Build for current platform
