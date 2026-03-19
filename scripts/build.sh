@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP="flowgate"
-VERSION=$(cat VERSION 2>/dev/null || echo "0.0.0")
+VERSION="${VERSION:-$(cat VERSION 2>/dev/null || echo "0.0.0")}"
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 GIT_DIRTY=$(git diff --quiet 2>/dev/null && echo "" || echo "-dirty")
 BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
