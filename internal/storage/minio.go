@@ -2,8 +2,10 @@ package storage
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
+	"net/http"
 	"sync"
 
 	"github.com/minio/minio-go/v7"
@@ -30,7 +32,11 @@ func NewMinIOClient() *MinIOClient {
 }
 
 func cacheKey(cfg group.MinIOConfig) string {
-	return cfg.Endpoint + "|" + cfg.AccessKey
+	skipTLS := "0"
+	if cfg.SkipTLSVerify {
+		skipTLS = "1"
+	}
+	return cfg.Endpoint + "|" + cfg.AccessKey + "|" + skipTLS
 }
 
 func (m *MinIOClient) clientFor(cfg group.MinIOConfig) (*minio.Client, error) {
@@ -39,11 +45,18 @@ func (m *MinIOClient) clientFor(cfg group.MinIOConfig) (*minio.Client, error) {
 		return v.(*minio.Client), nil
 	}
 
-	client, err := minio.New(cfg.Endpoint, &minio.Options{
+	opts := &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: cfg.UseSSL,
 		Region: cfg.Region,
-	})
+	}
+	if cfg.SkipTLSVerify {
+		opts.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+	}
+
+	client, err := minio.New(cfg.Endpoint, opts)
 	if err != nil {
 		return nil, fmt.Errorf("minio client for %q: %w", cfg.Endpoint, err)
 	}

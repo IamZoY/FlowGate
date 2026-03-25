@@ -36,10 +36,11 @@ type App struct {
 // MinIOConfig holds all connection details for one MinIO instance.
 // SecretKey is stored AES-GCM encrypted and never appears in JSON responses.
 type MinIOConfig struct {
-	Endpoint  string `json:"endpoint"   db:"endpoint"`
-	AccessKey string `json:"access_key" db:"access_key"`
-	SecretKey string `json:"-"          db:"secret_key"` // encrypted at rest
-	Bucket    string `json:"bucket"     db:"bucket"`
-	Region    string `json:"region"     db:"region"`
-	UseSSL    bool   `json:"use_ssl"    db:"use_ssl"`
+	Endpoint      string `json:"endpoint"        db:"endpoint"`
+	AccessKey     string `json:"access_key"      db:"access_key"`
+	SecretKey     string `json:"-"               db:"secret_key"` // encrypted at rest
+	Bucket        string `json:"bucket"          db:"bucket"`
+	Region        string `json:"region"          db:"region"`
+	UseSSL        bool   `json:"use_ssl"         db:"use_ssl"`
+	SkipTLSVerify bool   `json:"skip_tls_verify" db:"skip_tls_verify"`
 }

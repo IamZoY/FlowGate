@@ -184,21 +184,21 @@ func scanGroup(row rowScanner) (*group.Group, error) {
 
 const appColumns = `
 	a.id, a.group_id, a.name, a.description,
-	a.src_endpoint, a.src_access_key, a.src_secret_key, a.src_bucket, a.src_region, a.src_use_ssl,
-	a.dst_endpoint, a.dst_access_key, a.dst_secret_key, a.dst_bucket, a.dst_region, a.dst_use_ssl,
+	a.src_endpoint, a.src_access_key, a.src_secret_key, a.src_bucket, a.src_region, a.src_use_ssl, a.src_skip_tls_verify,
+	a.dst_endpoint, a.dst_access_key, a.dst_secret_key, a.dst_bucket, a.dst_region, a.dst_use_ssl, a.dst_skip_tls_verify,
 	a.webhook_secret, a.enabled, a.created_at, a.updated_at`
 
 func (s *SQLiteStore) CreateApp(ctx context.Context, a *group.App) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO apps (
 			id, group_id, name, description,
-			src_endpoint, src_access_key, src_secret_key, src_bucket, src_region, src_use_ssl,
-			dst_endpoint, dst_access_key, dst_secret_key, dst_bucket, dst_region, dst_use_ssl,
+			src_endpoint, src_access_key, src_secret_key, src_bucket, src_region, src_use_ssl, src_skip_tls_verify,
+			dst_endpoint, dst_access_key, dst_secret_key, dst_bucket, dst_region, dst_use_ssl, dst_skip_tls_verify,
 			webhook_secret, enabled, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.GroupID, a.Name, a.Description,
-		a.Src.Endpoint, a.Src.AccessKey, a.Src.SecretKey, a.Src.Bucket, a.Src.Region, boolToInt(a.Src.UseSSL),
-		a.Dst.Endpoint, a.Dst.AccessKey, a.Dst.SecretKey, a.Dst.Bucket, a.Dst.Region, boolToInt(a.Dst.UseSSL),
+		a.Src.Endpoint, a.Src.AccessKey, a.Src.SecretKey, a.Src.Bucket, a.Src.Region, boolToInt(a.Src.UseSSL), boolToInt(a.Src.SkipTLSVerify),
+		a.Dst.Endpoint, a.Dst.AccessKey, a.Dst.SecretKey, a.Dst.Bucket, a.Dst.Region, boolToInt(a.Dst.UseSSL), boolToInt(a.Dst.SkipTLSVerify),
 		a.WebhookSecret, boolToInt(a.Enabled),
 		a.CreatedAt.Unix(), a.UpdatedAt.Unix(),
 	)
@@ -245,13 +245,13 @@ func (s *SQLiteStore) UpdateApp(ctx context.Context, a *group.App) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE apps SET
 			name=?, description=?,
-			src_endpoint=?, src_access_key=?, src_secret_key=?, src_bucket=?, src_region=?, src_use_ssl=?,
-			dst_endpoint=?, dst_access_key=?, dst_secret_key=?, dst_bucket=?, dst_region=?, dst_use_ssl=?,
+			src_endpoint=?, src_access_key=?, src_secret_key=?, src_bucket=?, src_region=?, src_use_ssl=?, src_skip_tls_verify=?,
+			dst_endpoint=?, dst_access_key=?, dst_secret_key=?, dst_bucket=?, dst_region=?, dst_use_ssl=?, dst_skip_tls_verify=?,
 			webhook_secret=?, enabled=?, updated_at=?
 		 WHERE id=?`,
 		a.Name, a.Description,
-		a.Src.Endpoint, a.Src.AccessKey, a.Src.SecretKey, a.Src.Bucket, a.Src.Region, boolToInt(a.Src.UseSSL),
-		a.Dst.Endpoint, a.Dst.AccessKey, a.Dst.SecretKey, a.Dst.Bucket, a.Dst.Region, boolToInt(a.Dst.UseSSL),
+		a.Src.Endpoint, a.Src.AccessKey, a.Src.SecretKey, a.Src.Bucket, a.Src.Region, boolToInt(a.Src.UseSSL), boolToInt(a.Src.SkipTLSVerify),
+		a.Dst.Endpoint, a.Dst.AccessKey, a.Dst.SecretKey, a.Dst.Bucket, a.Dst.Region, boolToInt(a.Dst.UseSSL), boolToInt(a.Dst.SkipTLSVerify),
 		a.WebhookSecret, boolToInt(a.Enabled), a.UpdatedAt.Unix(),
 		a.ID,
 	)
@@ -266,11 +266,11 @@ func (s *SQLiteStore) DeleteApp(ctx context.Context, id string) error {
 func scanApp(row rowScanner) (*group.App, error) {
 	var a group.App
 	var ca, ua int64
-	var srcSSL, dstSSL, enabled int
+	var srcSSL, srcSkipTLS, dstSSL, dstSkipTLS, enabled int
 	err := row.Scan(
 		&a.ID, &a.GroupID, &a.Name, &a.Description,
-		&a.Src.Endpoint, &a.Src.AccessKey, &a.Src.SecretKey, &a.Src.Bucket, &a.Src.Region, &srcSSL,
-		&a.Dst.Endpoint, &a.Dst.AccessKey, &a.Dst.SecretKey, &a.Dst.Bucket, &a.Dst.Region, &dstSSL,
+		&a.Src.Endpoint, &a.Src.AccessKey, &a.Src.SecretKey, &a.Src.Bucket, &a.Src.Region, &srcSSL, &srcSkipTLS,
+		&a.Dst.Endpoint, &a.Dst.AccessKey, &a.Dst.SecretKey, &a.Dst.Bucket, &a.Dst.Region, &dstSSL, &dstSkipTLS,
 		&a.WebhookSecret, &enabled, &ca, &ua,
 	)
 	if err == sql.ErrNoRows {
@@ -280,7 +280,9 @@ func scanApp(row rowScanner) (*group.App, error) {
 		return nil, err
 	}
 	a.Src.UseSSL = srcSSL == 1
+	a.Src.SkipTLSVerify = srcSkipTLS == 1
 	a.Dst.UseSSL = dstSSL == 1
+	a.Dst.SkipTLSVerify = dstSkipTLS == 1
 	a.Enabled = enabled == 1
 	a.CreatedAt = time.Unix(ca, 0).UTC()
 	a.UpdatedAt = time.Unix(ua, 0).UTC()

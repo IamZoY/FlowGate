@@ -176,6 +176,9 @@ function appFormHTML(app) {
       <div class="form-group"><label>Region</label><input id="f-src-region" value="${esc(s.region || 'us-east-1')}" /></div>
       <div class="form-group"><label>Use SSL</label><select id="f-src-ssl"><option value="false" ${!s.use_ssl ? 'selected' : ''}>No</option><option value="true" ${s.use_ssl ? 'selected' : ''}>Yes</option></select></div>
     </div>
+    <div class="form-row">
+      <div class="form-group"><label>Skip TLS Verify</label><select id="f-src-skip-tls"><option value="false" ${!s.skip_tls_verify ? 'selected' : ''}>No</option><option value="true" ${s.skip_tls_verify ? 'selected' : ''}>Yes</option></select></div>
+    </div>
     <div class="form-section-label">Destination MinIO</div>
     <div class="form-row">
       <div class="form-group"><label>Endpoint</label><input id="f-dst-endpoint" value="${esc(d.endpoint || '')}" placeholder="minio-dst:9000" /></div>
@@ -188,6 +191,9 @@ function appFormHTML(app) {
     <div class="form-row">
       <div class="form-group"><label>Region</label><input id="f-dst-region" value="${esc(d.region || 'us-east-1')}" /></div>
       <div class="form-group"><label>Use SSL</label><select id="f-dst-ssl"><option value="false" ${!d.use_ssl ? 'selected' : ''}>No</option><option value="true" ${d.use_ssl ? 'selected' : ''}>Yes</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Skip TLS Verify</label><select id="f-dst-skip-tls"><option value="false" ${!d.skip_tls_verify ? 'selected' : ''}>No</option><option value="true" ${d.skip_tls_verify ? 'selected' : ''}>Yes</option></select></div>
     </div>`;
 }
 
@@ -203,6 +209,7 @@ function collectAppForm() {
       bucket: document.getElementById('f-src-bucket').value.trim(),
       region: document.getElementById('f-src-region').value || 'us-east-1',
       use_ssl: document.getElementById('f-src-ssl').value === 'true',
+      skip_tls_verify: document.getElementById('f-src-skip-tls').value === 'true',
     },
     dst: {
       endpoint: document.getElementById('f-dst-endpoint').value.trim(),
@@ -210,6 +217,7 @@ function collectAppForm() {
       bucket: document.getElementById('f-dst-bucket').value.trim(),
       region: document.getElementById('f-dst-region').value || 'us-east-1',
       use_ssl: document.getElementById('f-dst-ssl').value === 'true',
+      skip_tls_verify: document.getElementById('f-dst-skip-tls').value === 'true',
     },
   };
   if (srcSecret) body.src.secret_key = srcSecret;

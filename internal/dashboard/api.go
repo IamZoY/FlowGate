@@ -197,20 +197,22 @@ func (a *API) CreateApp(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 		Src         struct {
-			Endpoint  string `json:"endpoint"`
-			AccessKey string `json:"access_key"`
-			SecretKey string `json:"secret_key"`
-			Bucket    string `json:"bucket"`
-			Region    string `json:"region"`
-			UseSSL    bool   `json:"use_ssl"`
+			Endpoint      string `json:"endpoint"`
+			AccessKey     string `json:"access_key"`
+			SecretKey     string `json:"secret_key"`
+			Bucket        string `json:"bucket"`
+			Region        string `json:"region"`
+			UseSSL        bool   `json:"use_ssl"`
+			SkipTLSVerify bool   `json:"skip_tls_verify"`
 		} `json:"src"`
 		Dst struct {
-			Endpoint  string `json:"endpoint"`
-			AccessKey string `json:"access_key"`
-			SecretKey string `json:"secret_key"`
-			Bucket    string `json:"bucket"`
-			Region    string `json:"region"`
-			UseSSL    bool   `json:"use_ssl"`
+			Endpoint      string `json:"endpoint"`
+			AccessKey     string `json:"access_key"`
+			SecretKey     string `json:"secret_key"`
+			Bucket        string `json:"bucket"`
+			Region        string `json:"region"`
+			UseSSL        bool   `json:"use_ssl"`
+			SkipTLSVerify bool   `json:"skip_tls_verify"`
 		} `json:"dst"`
 	}
 	if err := readJSON(r, &body); err != nil || body.Name == "" {
@@ -220,20 +222,22 @@ func (a *API) CreateApp(w http.ResponseWriter, r *http.Request) {
 
 	app, err := a.svc.CreateApp(r.Context(), groupID, body.Name, body.Description,
 		group.MinIOConfig{
-			Endpoint:  body.Src.Endpoint,
-			AccessKey: body.Src.AccessKey,
-			SecretKey: body.Src.SecretKey,
-			Bucket:    body.Src.Bucket,
-			Region:    body.Src.Region,
-			UseSSL:    body.Src.UseSSL,
+			Endpoint:      body.Src.Endpoint,
+			AccessKey:     body.Src.AccessKey,
+			SecretKey:     body.Src.SecretKey,
+			Bucket:        body.Src.Bucket,
+			Region:        body.Src.Region,
+			UseSSL:        body.Src.UseSSL,
+			SkipTLSVerify: body.Src.SkipTLSVerify,
 		},
 		group.MinIOConfig{
-			Endpoint:  body.Dst.Endpoint,
-			AccessKey: body.Dst.AccessKey,
-			SecretKey: body.Dst.SecretKey,
-			Bucket:    body.Dst.Bucket,
-			Region:    body.Dst.Region,
-			UseSSL:    body.Dst.UseSSL,
+			Endpoint:      body.Dst.Endpoint,
+			AccessKey:     body.Dst.AccessKey,
+			SecretKey:     body.Dst.SecretKey,
+			Bucket:        body.Dst.Bucket,
+			Region:        body.Dst.Region,
+			UseSSL:        body.Dst.UseSSL,
+			SkipTLSVerify: body.Dst.SkipTLSVerify,
 		},
 	)
 	if err != nil {
@@ -266,21 +270,23 @@ func (a *API) UpdateApp(w http.ResponseWriter, r *http.Request) {
 		Name        *string `json:"name"`
 		Description *string `json:"description"`
 		Enabled     *bool   `json:"enabled"`
-		Src         *struct {
-			Endpoint  string `json:"endpoint"`
-			AccessKey string `json:"access_key"`
-			SecretKey string `json:"secret_key"`
-			Bucket    string `json:"bucket"`
-			Region    string `json:"region"`
-			UseSSL    bool   `json:"use_ssl"`
+		Src *struct {
+			Endpoint      string `json:"endpoint"`
+			AccessKey     string `json:"access_key"`
+			SecretKey     string `json:"secret_key"`
+			Bucket        string `json:"bucket"`
+			Region        string `json:"region"`
+			UseSSL        bool   `json:"use_ssl"`
+			SkipTLSVerify bool   `json:"skip_tls_verify"`
 		} `json:"src"`
 		Dst *struct {
-			Endpoint  string `json:"endpoint"`
-			AccessKey string `json:"access_key"`
-			SecretKey string `json:"secret_key"`
-			Bucket    string `json:"bucket"`
-			Region    string `json:"region"`
-			UseSSL    bool   `json:"use_ssl"`
+			Endpoint      string `json:"endpoint"`
+			AccessKey     string `json:"access_key"`
+			SecretKey     string `json:"secret_key"`
+			Bucket        string `json:"bucket"`
+			Region        string `json:"region"`
+			UseSSL        bool   `json:"use_ssl"`
+			SkipTLSVerify bool   `json:"skip_tls_verify"`
 		} `json:"dst"`
 	}
 	if err := readJSON(r, &body); err != nil {
@@ -303,6 +309,7 @@ func (a *API) UpdateApp(w http.ResponseWriter, r *http.Request) {
 		app.Src.Bucket = body.Src.Bucket
 		app.Src.Region = body.Src.Region
 		app.Src.UseSSL = body.Src.UseSSL
+		app.Src.SkipTLSVerify = body.Src.SkipTLSVerify
 		if body.Src.SecretKey != "" {
 			enc, err := a.svc.EncryptSecret(body.Src.SecretKey)
 			if err != nil {
@@ -318,6 +325,7 @@ func (a *API) UpdateApp(w http.ResponseWriter, r *http.Request) {
 		app.Dst.Bucket = body.Dst.Bucket
 		app.Dst.Region = body.Dst.Region
 		app.Dst.UseSSL = body.Dst.UseSSL
+		app.Dst.SkipTLSVerify = body.Dst.SkipTLSVerify
 		if body.Dst.SecretKey != "" {
 			enc, err := a.svc.EncryptSecret(body.Dst.SecretKey)
 			if err != nil {
