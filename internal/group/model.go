@@ -27,10 +27,12 @@ type App struct {
 	Description   string      `json:"description" db:"description"`
 	Src           MinIOConfig `json:"src"`
 	Dst           MinIOConfig `json:"dst"`
-	WebhookSecret string      `json:"-"           db:"webhook_secret"` // never serialised
-	Enabled       bool        `json:"enabled"     db:"enabled"`
-	CreatedAt     time.Time   `json:"created_at"  db:"created_at"`
-	UpdatedAt     time.Time   `json:"updated_at"  db:"updated_at"`
+	WebhookSecret       string      `json:"-"                      db:"webhook_secret"` // never serialised
+	Enabled             bool        `json:"enabled"                db:"enabled"`
+	RetryMaxAttempts    int         `json:"retry_max_attempts"     db:"retry_max_attempts"`
+	RetryBackoffSeconds int         `json:"retry_backoff_seconds"  db:"retry_backoff_seconds"`
+	CreatedAt           time.Time   `json:"created_at"             db:"created_at"`
+	UpdatedAt           time.Time   `json:"updated_at"             db:"updated_at"`
 }
 
 // MinIOConfig holds all connection details for one MinIO instance.

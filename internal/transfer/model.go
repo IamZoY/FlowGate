@@ -15,13 +15,17 @@ const (
 	StatusInProgress TransferStatus = "in_progress"
 	StatusSuccess    TransferStatus = "success"
 	StatusFailed     TransferStatus = "failed"
+	StatusRetrying   TransferStatus = "retrying"
 )
 
 // TransferJob is the unit of work placed on the jobs channel.
 type TransferJob struct {
-	Transfer  *storage.Transfer
-	App       group.App
-	ObjectKey string
+	Transfer    *storage.Transfer
+	App         group.App
+	ObjectKey   string
+	RetryCount  int // current attempt number (0 = first try)
+	MaxRetries  int // maximum retry attempts for this job
+	BackoffSecs int // delay in seconds between retries
 }
 
 // ErrQueueFull is returned by Manager.Enqueue when the jobs channel is at capacity.

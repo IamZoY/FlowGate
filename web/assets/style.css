@@ -182,6 +182,7 @@ body {
 .badge-in_progress { background: #dbeeff; color: #1e6fcc; }
 .badge-success    { background: #d4f5e2; color: #1a8044; }
 .badge-failed     { background: #ffe0e0; color: #c0392b; }
+.badge-retrying   { background: #fff3cd; color: #856404; }
 
 /* Buttons */
 .btn {

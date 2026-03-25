@@ -40,6 +40,7 @@ func (s *Service) CreateApp(
 	ctx context.Context,
 	groupID, name, description string,
 	src, dst MinIOConfig,
+	retryMaxAttempts, retryBackoffSeconds int,
 ) (*App, error) {
 	webhookSecret, err := GenerateWebhookSecret()
 	if err != nil {
@@ -58,16 +59,18 @@ func (s *Service) CreateApp(
 	dst.SecretKey = encDstSecret
 
 	app := &App{
-		ID:            uuid.NewString(),
-		GroupID:       groupID,
-		Name:          name,
-		Description:   description,
-		Src:           src,
-		Dst:           dst,
-		WebhookSecret: webhookSecret,
-		Enabled:       true,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		ID:                  uuid.NewString(),
+		GroupID:             groupID,
+		Name:                name,
+		Description:         description,
+		Src:                 src,
+		Dst:                 dst,
+		WebhookSecret:       webhookSecret,
+		Enabled:             true,
+		RetryMaxAttempts:    retryMaxAttempts,
+		RetryBackoffSeconds: retryBackoffSeconds,
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
 	}
 	if err := s.store.CreateApp(ctx, app); err != nil {
 		return nil, err

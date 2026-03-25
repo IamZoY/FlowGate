@@ -19,15 +19,24 @@ import (
 
 // Handler processes inbound MinIO webhook events and enqueues transfer jobs.
 type Handler struct {
-	store   storage.Store
-	manager transfer.Manager
-	hub     *hub.Hub
-	encKey  []byte // AES key for decrypting MinIO credentials
+	store             storage.Store
+	manager           transfer.Manager
+	hub               *hub.Hub
+	encKey            []byte // AES key for decrypting MinIO credentials
+	defaultMaxRetries int
+	defaultBackoffSec int
 }
 
 // NewHandler creates a Handler wired to the given dependencies.
-func NewHandler(store storage.Store, manager transfer.Manager, h *hub.Hub, encKey []byte) *Handler {
-	return &Handler{store: store, manager: manager, hub: h, encKey: encKey}
+func NewHandler(store storage.Store, manager transfer.Manager, h *hub.Hub, encKey []byte, defaultMaxRetries, defaultBackoffSec int) *Handler {
+	return &Handler{
+		store:             store,
+		manager:           manager,
+		hub:               h,
+		encKey:            encKey,
+		defaultMaxRetries: defaultMaxRetries,
+		defaultBackoffSec: defaultBackoffSec,
+	}
 }
 
 // ServeHTTP implements http.Handler so Handler can be mounted on a chi router.
@@ -76,6 +85,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Compute effective retry config: per-app overrides global default.
+	maxRetries := h.defaultMaxRetries
+	backoffSec := h.defaultBackoffSec
+	if app.RetryMaxAttempts > 0 {
+		maxRetries = app.RetryMaxAttempts
+	}
+	if app.RetryBackoffSeconds > 0 {
+		backoffSec = app.RetryBackoffSeconds
+	}
+
 	// Process each record — MinIO may batch multiple events per request.
 	for _, rec := range event.Records {
 		rawKey := rec.S3.Object.Key
@@ -95,6 +114,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ETag:       rec.S3.Object.ETag,
 			Status:     "pending",
 			CreatedAt:  time.Now(),
+			MaxRetries: maxRetries,
 		}
 		if err := h.store.CreateTransfer(r.Context(), t); err != nil {
 			slog.Error("create transfer record", "error", err, "object_key", objectKey)
@@ -104,9 +124,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// Build the job and enqueue it (with decrypted creds).
 		job := transfer.TransferJob{
-			Transfer:  t,
-			App:       *decryptedApp,
-			ObjectKey: objectKey,
+			Transfer:    t,
+			App:         *decryptedApp,
+			ObjectKey:   objectKey,
+			MaxRetries:  maxRetries,
+			BackoffSecs: backoffSec,
 		}
 		if err := h.manager.Enqueue(job); err != nil {
 			if errors.Is(err, transfer.ErrQueueFull) {

@@ -17,23 +17,27 @@ type Manager interface {
 }
 
 type manager struct {
-	jobs    chan TransferJob
-	wg      sync.WaitGroup
-	workers int
-	store   storage.Store
-	minio   storage.ObjectStorage
-	hub     *hub.Hub
+	jobs              chan TransferJob
+	wg                sync.WaitGroup
+	workers           int
+	store             storage.Store
+	minio             storage.ObjectStorage
+	hub               *hub.Hub
+	defaultMaxRetries int
+	defaultBackoffSec int
 }
 
 // NewManager creates a Manager with the given worker count and channel capacity.
 // Call Start before Enqueue.
-func NewManager(workers, capacity int, store storage.Store, minio storage.ObjectStorage, h *hub.Hub) Manager {
+func NewManager(workers, capacity int, store storage.Store, minio storage.ObjectStorage, h *hub.Hub, defaultMaxRetries, defaultBackoffSec int) Manager {
 	return &manager{
-		jobs:    make(chan TransferJob, capacity),
-		workers: workers,
-		store:   store,
-		minio:   minio,
-		hub:     h,
+		jobs:              make(chan TransferJob, capacity),
+		workers:           workers,
+		store:             store,
+		minio:             minio,
+		hub:               h,
+		defaultMaxRetries: defaultMaxRetries,
+		defaultBackoffSec: defaultBackoffSec,
 	}
 }
 

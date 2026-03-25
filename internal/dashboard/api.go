@@ -194,9 +194,11 @@ func (a *API) CreateApp(w http.ResponseWriter, r *http.Request) {
 	groupID := chi.URLParam(r, "id")
 
 	var body struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-		Src         struct {
+		Name                string `json:"name"`
+		Description         string `json:"description"`
+		RetryMaxAttempts    int    `json:"retry_max_attempts"`
+		RetryBackoffSeconds int    `json:"retry_backoff_seconds"`
+		Src                 struct {
 			Endpoint      string `json:"endpoint"`
 			AccessKey     string `json:"access_key"`
 			SecretKey     string `json:"secret_key"`
@@ -239,6 +241,8 @@ func (a *API) CreateApp(w http.ResponseWriter, r *http.Request) {
 			UseSSL:        body.Dst.UseSSL,
 			SkipTLSVerify: body.Dst.SkipTLSVerify,
 		},
+		body.RetryMaxAttempts,
+		body.RetryBackoffSeconds,
 	)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -267,10 +271,12 @@ func (a *API) UpdateApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
-		Enabled     *bool   `json:"enabled"`
-		Src *struct {
+		Name                *string `json:"name"`
+		Description         *string `json:"description"`
+		Enabled             *bool   `json:"enabled"`
+		RetryMaxAttempts    *int    `json:"retry_max_attempts"`
+		RetryBackoffSeconds *int    `json:"retry_backoff_seconds"`
+		Src                 *struct {
 			Endpoint      string `json:"endpoint"`
 			AccessKey     string `json:"access_key"`
 			SecretKey     string `json:"secret_key"`
@@ -302,6 +308,12 @@ func (a *API) UpdateApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Enabled != nil {
 		app.Enabled = *body.Enabled
+	}
+	if body.RetryMaxAttempts != nil {
+		app.RetryMaxAttempts = *body.RetryMaxAttempts
+	}
+	if body.RetryBackoffSeconds != nil {
+		app.RetryBackoffSeconds = *body.RetryBackoffSeconds
 	}
 	if body.Src != nil {
 		app.Src.Endpoint = body.Src.Endpoint

@@ -194,6 +194,11 @@ function appFormHTML(app) {
     </div>
     <div class="form-row">
       <div class="form-group"><label>Skip TLS Verify</label><select id="f-dst-skip-tls"><option value="false" ${!d.skip_tls_verify ? 'selected' : ''}>No</option><option value="true" ${d.skip_tls_verify ? 'selected' : ''}>Yes</option></select></div>
+    </div>
+    <div class="form-section-label">Retry Configuration</div>
+    <div class="form-row">
+      <div class="form-group"><label>Max Retry Attempts</label><input id="f-retry-max" type="number" min="0" max="10" value="${app?.retry_max_attempts || 0}" placeholder="0 = use global default" /></div>
+      <div class="form-group"><label>Retry Backoff (seconds)</label><input id="f-retry-backoff" type="number" min="0" value="${app?.retry_backoff_seconds || 0}" placeholder="0 = use global default" /></div>
     </div>`;
 }
 
@@ -219,6 +224,8 @@ function collectAppForm() {
       use_ssl: document.getElementById('f-dst-ssl').value === 'true',
       skip_tls_verify: document.getElementById('f-dst-skip-tls').value === 'true',
     },
+    retry_max_attempts: parseInt(document.getElementById('f-retry-max').value) || 0,
+    retry_backoff_seconds: parseInt(document.getElementById('f-retry-backoff').value) || 0,
   };
   if (srcSecret) body.src.secret_key = srcSecret;
   if (dstSecret) body.dst.secret_key = dstSecret;
@@ -354,7 +361,8 @@ function prependFeedRow(msg) {
   const p = msg.payload || {};
   const status = msg.type === 'transfer:queued' ? 'pending'
     : msg.type === 'transfer:started' ? 'in_progress'
-    : msg.type === 'transfer:completed' ? 'success' : 'failed';
+    : msg.type === 'transfer:completed' ? 'success'
+    : msg.type === 'transfer:retrying' ? 'retrying' : 'failed';
   const row = document.createElement('tr');
   row.innerHTML = `
     <td>${fmtTime(msg.timestamp)}</td>

@@ -10,6 +10,7 @@ const (
 	MsgTransferStarted   MessageType = "transfer:started"
 	MsgTransferCompleted MessageType = "transfer:completed"
 	MsgTransferFailed    MessageType = "transfer:failed"
+	MsgTransferRetrying  MessageType = "transfer:retrying"
 	MsgStatsUpdate       MessageType = "stats:update"
 	MsgPing              MessageType = "ping"
 	MsgGroupCreated      MessageType = "group:created"

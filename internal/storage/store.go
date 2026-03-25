@@ -23,6 +23,7 @@ type TransferStats struct {
 	FailedCount     int64      `json:"failed_count"`
 	InProgressCount int64      `json:"in_progress_count"`
 	PendingCount    int64      `json:"pending_count"`
+	RetryingCount   int64      `json:"retrying_count"`
 	TotalBytes      int64      `json:"total_bytes"`
 	AvgDurationMs   float64    `json:"avg_duration_ms"`
 	LastTransferAt  *time.Time `json:"last_transfer_at"`
@@ -53,6 +54,9 @@ type Transfer struct {
 	CompletedAt      *time.Time
 	DurationMs       float64
 	CreatedAt        time.Time
+	RetryCount       int
+	MaxRetries       int
+	NextRetryAt      *time.Time
 }
 
 // Store is the persistence interface used by all packages.
@@ -186,7 +190,8 @@ const appColumns = `
 	a.id, a.group_id, a.name, a.description,
 	a.src_endpoint, a.src_access_key, a.src_secret_key, a.src_bucket, a.src_region, a.src_use_ssl, a.src_skip_tls_verify,
 	a.dst_endpoint, a.dst_access_key, a.dst_secret_key, a.dst_bucket, a.dst_region, a.dst_use_ssl, a.dst_skip_tls_verify,
-	a.webhook_secret, a.enabled, a.created_at, a.updated_at`
+	a.webhook_secret, a.enabled, a.retry_max_attempts, a.retry_backoff_seconds,
+	a.created_at, a.updated_at`
 
 func (s *SQLiteStore) CreateApp(ctx context.Context, a *group.App) error {
 	_, err := s.db.ExecContext(ctx,
@@ -194,12 +199,13 @@ func (s *SQLiteStore) CreateApp(ctx context.Context, a *group.App) error {
 			id, group_id, name, description,
 			src_endpoint, src_access_key, src_secret_key, src_bucket, src_region, src_use_ssl, src_skip_tls_verify,
 			dst_endpoint, dst_access_key, dst_secret_key, dst_bucket, dst_region, dst_use_ssl, dst_skip_tls_verify,
-			webhook_secret, enabled, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			webhook_secret, enabled, retry_max_attempts, retry_backoff_seconds,
+			created_at, updated_at
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.GroupID, a.Name, a.Description,
 		a.Src.Endpoint, a.Src.AccessKey, a.Src.SecretKey, a.Src.Bucket, a.Src.Region, boolToInt(a.Src.UseSSL), boolToInt(a.Src.SkipTLSVerify),
 		a.Dst.Endpoint, a.Dst.AccessKey, a.Dst.SecretKey, a.Dst.Bucket, a.Dst.Region, boolToInt(a.Dst.UseSSL), boolToInt(a.Dst.SkipTLSVerify),
-		a.WebhookSecret, boolToInt(a.Enabled),
+		a.WebhookSecret, boolToInt(a.Enabled), a.RetryMaxAttempts, a.RetryBackoffSeconds,
 		a.CreatedAt.Unix(), a.UpdatedAt.Unix(),
 	)
 	return err
@@ -247,12 +253,14 @@ func (s *SQLiteStore) UpdateApp(ctx context.Context, a *group.App) error {
 			name=?, description=?,
 			src_endpoint=?, src_access_key=?, src_secret_key=?, src_bucket=?, src_region=?, src_use_ssl=?, src_skip_tls_verify=?,
 			dst_endpoint=?, dst_access_key=?, dst_secret_key=?, dst_bucket=?, dst_region=?, dst_use_ssl=?, dst_skip_tls_verify=?,
-			webhook_secret=?, enabled=?, updated_at=?
+			webhook_secret=?, enabled=?, retry_max_attempts=?, retry_backoff_seconds=?,
+			updated_at=?
 		 WHERE id=?`,
 		a.Name, a.Description,
 		a.Src.Endpoint, a.Src.AccessKey, a.Src.SecretKey, a.Src.Bucket, a.Src.Region, boolToInt(a.Src.UseSSL), boolToInt(a.Src.SkipTLSVerify),
 		a.Dst.Endpoint, a.Dst.AccessKey, a.Dst.SecretKey, a.Dst.Bucket, a.Dst.Region, boolToInt(a.Dst.UseSSL), boolToInt(a.Dst.SkipTLSVerify),
-		a.WebhookSecret, boolToInt(a.Enabled), a.UpdatedAt.Unix(),
+		a.WebhookSecret, boolToInt(a.Enabled), a.RetryMaxAttempts, a.RetryBackoffSeconds,
+		a.UpdatedAt.Unix(),
 		a.ID,
 	)
 	return err
@@ -271,7 +279,8 @@ func scanApp(row rowScanner) (*group.App, error) {
 		&a.ID, &a.GroupID, &a.Name, &a.Description,
 		&a.Src.Endpoint, &a.Src.AccessKey, &a.Src.SecretKey, &a.Src.Bucket, &a.Src.Region, &srcSSL, &srcSkipTLS,
 		&a.Dst.Endpoint, &a.Dst.AccessKey, &a.Dst.SecretKey, &a.Dst.Bucket, &a.Dst.Region, &dstSSL, &dstSkipTLS,
-		&a.WebhookSecret, &enabled, &ca, &ua,
+		&a.WebhookSecret, &enabled, &a.RetryMaxAttempts, &a.RetryBackoffSeconds,
+		&ca, &ua,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -296,12 +305,14 @@ func (s *SQLiteStore) CreateTransfer(ctx context.Context, t *Transfer) error {
 		`INSERT INTO transfers (
 			id, app_id, object_key, src_bucket, dst_bucket,
 			object_size, etag, status, error_message, bytes_transferred,
-			started_at, completed_at, duration_ms, created_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			started_at, completed_at, duration_ms, created_at,
+			retry_count, max_retries, next_retry_at
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.AppID, t.ObjectKey, t.SrcBucket, t.DstBucket,
 		t.ObjectSize, t.ETag, t.Status, t.ErrorMessage, t.BytesTransferred,
 		nullableUnix(t.StartedAt), nullableUnix(t.CompletedAt), t.DurationMs,
 		t.CreatedAt.Unix(),
+		t.RetryCount, t.MaxRetries, nullableUnix(t.NextRetryAt),
 	)
 	return err
 }
@@ -310,7 +321,8 @@ func (s *SQLiteStore) GetTransfer(ctx context.Context, id string) (*Transfer, er
 	row := s.db.QueryRowContext(ctx,
 		`SELECT id, app_id, object_key, src_bucket, dst_bucket,
 		        object_size, etag, status, error_message, bytes_transferred,
-		        started_at, completed_at, duration_ms, created_at
+		        started_at, completed_at, duration_ms, created_at,
+		        retry_count, max_retries, next_retry_at
 		 FROM transfers WHERE id=?`, id)
 	return scanTransfer(row)
 }
@@ -319,10 +331,12 @@ func (s *SQLiteStore) UpdateTransfer(ctx context.Context, t *Transfer) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE transfers SET
 			status=?, error_message=?, bytes_transferred=?,
-			started_at=?, completed_at=?, duration_ms=?, etag=?
+			started_at=?, completed_at=?, duration_ms=?, etag=?,
+			retry_count=?, max_retries=?, next_retry_at=?
 		 WHERE id=?`,
 		t.Status, t.ErrorMessage, t.BytesTransferred,
 		nullableUnix(t.StartedAt), nullableUnix(t.CompletedAt), t.DurationMs, t.ETag,
+		t.RetryCount, t.MaxRetries, nullableUnix(t.NextRetryAt),
 		t.ID,
 	)
 	return err
@@ -373,7 +387,8 @@ func (s *SQLiteStore) ListTransfers(ctx context.Context, opts ListTransfersOpts)
 		fmt.Sprintf(`
 			SELECT t.id, t.app_id, t.object_key, t.src_bucket, t.dst_bucket,
 			       t.object_size, t.etag, t.status, t.error_message, t.bytes_transferred,
-			       t.started_at, t.completed_at, t.duration_ms, t.created_at
+			       t.started_at, t.completed_at, t.duration_ms, t.created_at,
+			       t.retry_count, t.max_retries, t.next_retry_at
 			FROM transfers t %s
 			WHERE %s
 			ORDER BY t.created_at DESC
@@ -419,6 +434,7 @@ func (s *SQLiteStore) GetStats(ctx context.Context, appID, groupID string) (*Tra
 			SUM(CASE WHEN status='failed'      THEN 1 ELSE 0 END),
 			SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END),
 			SUM(CASE WHEN status='pending'     THEN 1 ELSE 0 END),
+			SUM(CASE WHEN status='retrying'    THEN 1 ELSE 0 END),
 			COALESCE(SUM(bytes_transferred), 0),
 			COALESCE(AVG(CASE WHEN status='success' THEN duration_ms END), 0),
 			MAX(completed_at)
@@ -433,6 +449,7 @@ func (s *SQLiteStore) GetStats(ctx context.Context, appID, groupID string) (*Tra
 		&stats.FailedCount,
 		&stats.InProgressCount,
 		&stats.PendingCount,
+		&stats.RetryingCount,
 		&stats.TotalBytes,
 		&stats.AvgDurationMs,
 		&lastCA,
@@ -451,12 +468,13 @@ func (s *SQLiteStore) GetStats(ctx context.Context, appID, groupID string) (*Tra
 
 func scanTransfer(row rowScanner) (*Transfer, error) {
 	var t Transfer
-	var startedAt, completedAt *int64
+	var startedAt, completedAt, nextRetryAt *int64
 	var createdAt int64
 	err := row.Scan(
 		&t.ID, &t.AppID, &t.ObjectKey, &t.SrcBucket, &t.DstBucket,
 		&t.ObjectSize, &t.ETag, &t.Status, &t.ErrorMessage, &t.BytesTransferred,
 		&startedAt, &completedAt, &t.DurationMs, &createdAt,
+		&t.RetryCount, &t.MaxRetries, &nextRetryAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -472,6 +490,10 @@ func scanTransfer(row rowScanner) (*Transfer, error) {
 	if completedAt != nil {
 		ts := time.Unix(*completedAt, 0).UTC()
 		t.CompletedAt = &ts
+	}
+	if nextRetryAt != nil {
+		ts := time.Unix(*nextRetryAt, 0).UTC()
+		t.NextRetryAt = &ts
 	}
 	return &t, nil
 }

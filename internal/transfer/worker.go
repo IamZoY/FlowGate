@@ -41,7 +41,11 @@ func (m *manager) process(ctx context.Context, job TransferJob) {
 
 	// Perform the actual object transfer.
 	if err := m.doTransfer(ctx, job, log); err != nil {
-		m.fail(ctx, t, key, err)
+		if job.RetryCount < job.MaxRetries {
+			m.scheduleRetry(ctx, job, err, log)
+		} else {
+			m.fail(ctx, t, key, err)
+		}
 		return
 	}
 
@@ -95,6 +99,58 @@ func (m *manager) doTransfer(ctx context.Context, job TransferJob, log *slog.Log
 		return fmt.Errorf("PutObject: %w", err)
 	}
 	return nil
+}
+
+// scheduleRetry sets the transfer to "retrying" and re-enqueues after a delay.
+func (m *manager) scheduleRetry(ctx context.Context, job TransferJob, cause error, log *slog.Logger) {
+	job.RetryCount++
+	delay := time.Duration(job.BackoffSecs) * time.Second
+	nextRetry := time.Now().Add(delay)
+
+	t := job.Transfer
+	t.Status = StatusRetrying
+	t.RetryCount = job.RetryCount
+	t.ErrorMessage = cause.Error()
+	t.NextRetryAt = &nextRetry
+
+	if err := m.store.UpdateTransfer(ctx, t); err != nil {
+		log.Error("update retrying status", "transfer_id", t.ID, "error", err)
+	}
+
+	log.Warn("scheduling retry",
+		"transfer_id", t.ID,
+		"retry", job.RetryCount,
+		"max_retries", job.MaxRetries,
+		"delay_seconds", job.BackoffSecs,
+	)
+
+	m.hub.Broadcast(hub.Message{
+		Type:      hub.MsgTransferRetrying,
+		Timestamp: time.Now(),
+		Payload: map[string]any{
+			"transfer_id":   t.ID,
+			"app_id":        job.App.ID,
+			"object_key":    job.ObjectKey,
+			"retry_count":   job.RetryCount,
+			"max_retries":   job.MaxRetries,
+			"next_retry_at": nextRetry,
+			"error_message": cause.Error(),
+		},
+	})
+
+	time.AfterFunc(delay, func() {
+		// Reset transfer state for re-processing.
+		t.Status = StatusPending
+		t.ErrorMessage = ""
+		t.StartedAt = nil
+		t.CompletedAt = nil
+		t.NextRetryAt = nil
+
+		if err := m.Enqueue(job); err != nil {
+			log.Error("re-enqueue retry failed", "transfer_id", t.ID, "error", err)
+			m.fail(ctx, t, job.ObjectKey, fmt.Errorf("retry enqueue failed: %w (original: %s)", err, cause))
+		}
+	})
 }
 
 // fail marks a transfer as failed in the DB and broadcasts the event.

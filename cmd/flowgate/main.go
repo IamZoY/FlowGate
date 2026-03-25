@@ -95,6 +95,8 @@ func main() {
 		store,
 		minioClient,
 		h,
+		cfg.Transfer.RetryAttempts,
+		int(cfg.Transfer.RetryBackoff.Seconds()),
 	)
 	mgr.Start(ctx)
 
@@ -116,7 +118,10 @@ func main() {
 	}()
 
 	// 9. HTTP handlers.
-	webhookHandler := webhook.NewHandler(store, mgr, h, encKey)
+	webhookHandler := webhook.NewHandler(store, mgr, h, encKey,
+		cfg.Transfer.RetryAttempts,
+		int(cfg.Transfer.RetryBackoff.Seconds()),
+	)
 	api := dashboard.NewAPI(store, encKey, h)
 	webAssets, err := fs.Sub(web.Assets, "assets")
 	if err != nil {

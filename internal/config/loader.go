@@ -78,7 +78,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Transfer.RetryAttempts = 3
 	}
 	if cfg.Transfer.RetryBackoff.Duration == 0 {
-		cfg.Transfer.RetryBackoff = Duration{5 * time.Second}
+		cfg.Transfer.RetryBackoff = Duration{300 * time.Second}
 	}
 	if cfg.Logging.Level == "" {
 		cfg.Logging.Level = "info"
