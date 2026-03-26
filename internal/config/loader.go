@@ -74,12 +74,8 @@ func applyDefaults(cfg *Config) {
 	if cfg.Transfer.QueueCapacity == 0 {
 		cfg.Transfer.QueueCapacity = 1000
 	}
-	if cfg.Transfer.RetryAttempts == 0 {
-		cfg.Transfer.RetryAttempts = 3
-	}
-	if cfg.Transfer.RetryBackoff.Duration == 0 {
-		cfg.Transfer.RetryBackoff = Duration{300 * time.Second}
-	}
+	// RetryAttempts and RetryBackoff default to 0 (retries disabled).
+	// Set retry_attempts > 0 in config to enable retries.
 	if cfg.Logging.Level == "" {
 		cfg.Logging.Level = "info"
 	}

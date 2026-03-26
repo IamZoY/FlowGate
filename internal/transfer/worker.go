@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"time"
 
 	"github.com/ali/flowgate/internal/hub"
@@ -22,22 +23,25 @@ func (m *manager) process(ctx context.Context, job TransferJob) {
 		"object_key", key,
 	)
 
-	// Mark in_progress.
+	// Mark in_progress only on the first attempt; retries are already
+	// tracked in the DB with status "retrying".
 	now := time.Now()
-	t.Status = StatusInProgress
-	t.StartedAt = &now
-	if err := m.store.UpdateTransfer(ctx, t); err != nil {
-		log.Error("update in_progress", "error", err)
+	if job.RetryCount == 0 {
+		t.Status = StatusInProgress
+		t.StartedAt = &now
+		if err := m.store.UpdateTransfer(ctx, t); err != nil {
+			log.Error("update in_progress", "error", err)
+		}
+		m.hub.Broadcast(hub.Message{
+			Type:      hub.MsgTransferStarted,
+			Timestamp: now,
+			Payload: map[string]any{
+				"transfer_id": t.ID,
+				"app_id":      app.ID,
+				"object_key":  key,
+			},
+		})
 	}
-	m.hub.Broadcast(hub.Message{
-		Type:      hub.MsgTransferStarted,
-		Timestamp: now,
-		Payload: map[string]any{
-			"transfer_id": t.ID,
-			"app_id":      app.ID,
-			"object_key":  key,
-		},
-	})
 
 	// Perform the actual object transfer.
 	if err := m.doTransfer(ctx, job, log); err != nil {
@@ -93,7 +97,7 @@ func (m *manager) doTransfer(ctx context.Context, job TransferJob, log *slog.Log
 		size = t.ObjectSize
 	}
 
-	log.Info("streaming object", "size_bytes", size)
+	log.Debug("streaming object", "size_bytes", size)
 
 	if err := m.minio.PutObject(ctx, app.Dst, key, rc, size); err != nil {
 		return fmt.Errorf("PutObject: %w", err)
@@ -104,7 +108,24 @@ func (m *manager) doTransfer(ctx context.Context, job TransferJob, log *slog.Log
 // scheduleRetry sets the transfer to "retrying" and re-enqueues after a delay.
 func (m *manager) scheduleRetry(ctx context.Context, job TransferJob, cause error, log *slog.Logger) {
 	job.RetryCount++
-	delay := time.Duration(job.BackoffSecs) * time.Second
+
+	// Exponential backoff: base * 2^(attempt-1), with full jitter.
+	base := time.Duration(job.BackoffSecs) * time.Second
+	delay := base * (1 << (job.RetryCount - 1))
+
+	const maxDelay = 1 * time.Hour
+	if delay > maxDelay || delay <= 0 {
+		delay = maxDelay
+	}
+
+	const minDelay = 5 * time.Second
+	if delay < minDelay {
+		delay = minDelay
+	}
+	if delay > minDelay {
+		delay = minDelay + time.Duration(rand.Int63n(int64(delay-minDelay)))
+	}
+
 	nextRetry := time.Now().Add(delay)
 
 	t := job.Transfer
@@ -118,10 +139,9 @@ func (m *manager) scheduleRetry(ctx context.Context, job TransferJob, cause erro
 	}
 
 	log.Warn("scheduling retry",
-		"transfer_id", t.ID,
 		"retry", job.RetryCount,
 		"max_retries", job.MaxRetries,
-		"delay_seconds", job.BackoffSecs,
+		"delay", delay.Round(time.Millisecond),
 	)
 
 	m.hub.Broadcast(hub.Message{
