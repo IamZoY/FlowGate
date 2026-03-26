@@ -16,5 +16,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 FROM scratch
 COPY --from=builder /flowgate /flowgate
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+WORKDIR /data
 EXPOSE 8080
 ENTRYPOINT ["/flowgate"]
