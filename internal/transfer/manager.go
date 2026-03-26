@@ -11,13 +11,16 @@ import (
 // Manager is the public interface for the transfer worker pool.
 type Manager interface {
 	Start(ctx context.Context)
-	Enqueue(job TransferJob) error
+	Enqueue(job TransferJob)
 	Stop()
 	QueueDepth() int
 }
 
 type manager struct {
-	jobs              chan TransferJob
+	mu                sync.Mutex
+	cond              *sync.Cond
+	queue             []TransferJob
+	closed            bool
 	wg                sync.WaitGroup
 	workers           int
 	store             storage.Store
@@ -27,11 +30,10 @@ type manager struct {
 	defaultBackoffSec int
 }
 
-// NewManager creates a Manager with the given worker count and channel capacity.
+// NewManager creates a Manager with the given worker count.
 // Call Start before Enqueue.
-func NewManager(workers, capacity int, store storage.Store, minio storage.ObjectStorage, h *hub.Hub, defaultMaxRetries, defaultBackoffSec int) Manager {
-	return &manager{
-		jobs:              make(chan TransferJob, capacity),
+func NewManager(workers int, store storage.Store, minio storage.ObjectStorage, h *hub.Hub, defaultMaxRetries, defaultBackoffSec int) Manager {
+	m := &manager{
 		workers:           workers,
 		store:             store,
 		minio:             minio,
@@ -39,50 +41,57 @@ func NewManager(workers, capacity int, store storage.Store, minio storage.Object
 		defaultMaxRetries: defaultMaxRetries,
 		defaultBackoffSec: defaultBackoffSec,
 	}
+	m.cond = sync.NewCond(&m.mu)
+	return m
 }
 
-// Start spawns N worker goroutines that drain the jobs channel.
-// Workers respect ctx for cooperative cancellation; when ctx is done they
-// finish the current job and exit.
+// Start spawns N worker goroutines that drain the queue.
 func (m *manager) Start(ctx context.Context) {
 	for i := 0; i < m.workers; i++ {
 		m.wg.Add(1)
 		go func() {
 			defer m.wg.Done()
 			for {
-				select {
-				case job, ok := <-m.jobs:
-					if !ok {
-						return
-					}
-					m.process(ctx, job)
-				case <-ctx.Done():
+				m.mu.Lock()
+				for len(m.queue) == 0 && !m.closed {
+					m.cond.Wait()
+				}
+				if m.closed && len(m.queue) == 0 {
+					m.mu.Unlock()
 					return
 				}
+				job := m.queue[0]
+				m.queue[0] = TransferJob{} // zero out for GC
+				m.queue = m.queue[1:]
+				m.mu.Unlock()
+
+				m.process(ctx, job)
 			}
 		}()
 	}
 }
 
-// Enqueue places a job on the buffered channel without blocking.
-// Returns ErrQueueFull immediately if the channel is at capacity.
-func (m *manager) Enqueue(job TransferJob) error {
-	select {
-	case m.jobs <- job:
-		return nil
-	default:
-		return ErrQueueFull
-	}
+// Enqueue appends a job to the unbounded queue. Never fails.
+func (m *manager) Enqueue(job TransferJob) {
+	m.mu.Lock()
+	m.queue = append(m.queue, job)
+	m.mu.Unlock()
+	m.cond.Signal()
 }
 
-// Stop closes the jobs channel and waits for all in-flight workers to finish.
-// After Stop returns no further processing will occur.
+// Stop signals all workers to drain remaining jobs and exit.
 func (m *manager) Stop() {
-	close(m.jobs)
+	m.mu.Lock()
+	m.closed = true
+	m.mu.Unlock()
+	m.cond.Broadcast()
 	m.wg.Wait()
 }
 
-// QueueDepth returns the number of jobs currently waiting in the channel.
+// QueueDepth returns the number of jobs currently waiting.
 func (m *manager) QueueDepth() int {
-	return len(m.jobs)
+	m.mu.Lock()
+	n := len(m.queue)
+	m.mu.Unlock()
+	return n
 }

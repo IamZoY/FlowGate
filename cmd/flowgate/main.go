@@ -91,7 +91,6 @@ func main() {
 
 	mgr := transfer.NewManager(
 		cfg.Transfer.WorkerPoolSize,
-		cfg.Transfer.QueueCapacity,
 		store,
 		minioClient,
 		h,

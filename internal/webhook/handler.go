@@ -17,6 +17,8 @@ import (
 	"github.com/ali/flowgate/internal/transfer"
 )
 
+const appCacheTTL = 30 * time.Second
+
 // Handler processes inbound MinIO webhook events and enqueues transfer jobs.
 type Handler struct {
 	store             storage.Store
@@ -26,6 +28,7 @@ type Handler struct {
 	defaultMaxRetries int
 	defaultBackoffSec int
 	dedup             *deduper
+	apps              *appCache
 }
 
 // NewHandler creates a Handler wired to the given dependencies.
@@ -38,6 +41,7 @@ func NewHandler(store storage.Store, manager transfer.Manager, h *hub.Hub, encKe
 		defaultMaxRetries: defaultMaxRetries,
 		defaultBackoffSec: defaultBackoffSec,
 		dedup:             newDeduper(dedupWindow),
+		apps:              newAppCache(appCacheTTL),
 	}
 }
 
@@ -45,20 +49,33 @@ func NewHandler(store storage.Store, manager transfer.Manager, h *hub.Hub, encKe
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	groupSlug := chi.URLParam(r, "group")
 	appSlug := chi.URLParam(r, "app")
+	cacheKey := groupSlug + ":" + appSlug
 
-	// Resolve (group_slug, app_slug) → App.
-	app, err := h.store.GetAppByRoute(r.Context(), groupSlug, appSlug)
-	if err != nil || app == nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	if !app.Enabled {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
+	// Fast path: resolved + decrypted app from cache.
+	decryptedApp := h.apps.Get(cacheKey)
+	if decryptedApp == nil {
+		// Cache miss: query DB, verify, decrypt, then cache.
+		app, err := h.store.GetAppByRoute(r.Context(), groupSlug, appSlug)
+		if err != nil || app == nil {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		if !app.Enabled {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		dec, err := h.decryptAppCreds(app)
+		if err != nil {
+			slog.Error("decrypt credentials", "error", err, "app_id", app.ID)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		decryptedApp = dec
+		h.apps.Set(cacheKey, decryptedApp)
 	}
 
 	// Validate HMAC token.
-	if err := Verify(r, app.WebhookSecret); err != nil {
+	if err := Verify(r, decryptedApp.WebhookSecret); err != nil {
 		slog.Warn("webhook auth failed",
 			"group", groupSlug,
 			"app", appSlug,
@@ -79,22 +96,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Decrypt MinIO credentials before passing to worker.
-	decryptedApp, err := h.decryptAppCreds(app)
-	if err != nil {
-		slog.Error("decrypt credentials", "error", err, "app_id", app.ID)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
 	// Compute effective retry config: per-app overrides global default.
 	maxRetries := h.defaultMaxRetries
 	backoffSec := h.defaultBackoffSec
-	if app.RetryMaxAttempts > 0 {
-		maxRetries = app.RetryMaxAttempts
+	if decryptedApp.RetryMaxAttempts > 0 {
+		maxRetries = decryptedApp.RetryMaxAttempts
 	}
-	if app.RetryBackoffSeconds > 0 {
-		backoffSec = app.RetryBackoffSeconds
+	if decryptedApp.RetryBackoffSeconds > 0 {
+		backoffSec = decryptedApp.RetryBackoffSeconds
 	}
 
 	// Process each record — MinIO may batch multiple events per request.
@@ -105,29 +114,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			objectKey = rawKey // fall back to raw if unescape fails
 		}
 
-		dedupKey := fmt.Sprintf("%s:%s", app.ID, objectKey)
+		dedupKey := fmt.Sprintf("%s:%s", decryptedApp.ID, objectKey)
 
 		// Fast path: in-memory dedup catches rapid-fire duplicates.
 		if h.dedup.IsDuplicate(dedupKey) {
 			slog.Debug("duplicate webhook skipped (in-memory)",
-				"app_id", app.ID, "object_key", objectKey)
+				"app_id", decryptedApp.ID, "object_key", objectKey)
 			continue
 		}
 
 		// Slow path: DB check covers restarts where in-memory map is empty.
-		if active, _ := h.store.HasActiveTransfer(r.Context(), app.ID, objectKey); active {
+		if active, _ := h.store.HasActiveTransfer(r.Context(), decryptedApp.ID, objectKey); active {
 			slog.Debug("duplicate webhook skipped (active transfer exists)",
-				"app_id", app.ID, "object_key", objectKey)
+				"app_id", decryptedApp.ID, "object_key", objectKey)
 			continue
 		}
 
 		// Persist a pending transfer record.
 		t := &storage.Transfer{
 			ID:         uuid.NewString(),
-			AppID:      app.ID,
+			AppID:      decryptedApp.ID,
 			ObjectKey:  objectKey,
-			SrcBucket:  app.Src.Bucket,
-			DstBucket:  app.Dst.Bucket,
+			SrcBucket:  decryptedApp.Src.Bucket,
+			DstBucket:  decryptedApp.Dst.Bucket,
 			ObjectSize: rec.S3.Object.Size,
 			ETag:       rec.S3.Object.ETag,
 			Status:     "pending",
@@ -143,37 +152,28 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Build the job and enqueue it (with decrypted creds).
 		job := transfer.TransferJob{
 			Transfer:    t,
-			App:         *decryptedApp,
+			App:         decryptedApp,
 			ObjectKey:   objectKey,
 			MaxRetries:  maxRetries,
 			BackoffSecs: backoffSec,
 		}
-		if err := h.manager.Enqueue(job); err != nil {
-			// Never return 503 to MinIO — it retries and creates a cascade.
-			// Mark the transfer as failed and return 202 to stop the loop.
-			slog.Warn("transfer queue full, marking failed",
-				"transfer_id", t.ID, "object_key", objectKey, "error", err)
-			now := time.Now()
-			t.Status = "failed"
-			t.ErrorMessage = "queue capacity exceeded"
-			t.CompletedAt = &now
-			_ = h.store.UpdateTransfer(r.Context(), t)
-			continue
-		}
+		h.manager.Enqueue(job)
 
-		// Notify dashboard clients.
-		h.hub.Broadcast(hub.Message{
-			Type:      hub.MsgTransferQueued,
-			Timestamp: time.Now(),
-			Payload: map[string]any{
-				"transfer_id": t.ID,
-				"app_id":      app.ID,
-				"object_key":  objectKey,
-				"object_size": rec.S3.Object.Size,
-				"src_bucket":  t.SrcBucket,
-				"dst_bucket":  t.DstBucket,
-			},
-		})
+		// Notify dashboard clients (throttled under high load).
+		if h.manager.QueueDepth() <= 1000 {
+			h.hub.Broadcast(hub.Message{
+				Type:      hub.MsgTransferQueued,
+				Timestamp: time.Now(),
+				Payload: map[string]any{
+					"transfer_id": t.ID,
+					"app_id":      decryptedApp.ID,
+					"object_key":  objectKey,
+					"object_size": rec.S3.Object.Size,
+					"src_bucket":  t.SrcBucket,
+					"dst_bucket":  t.DstBucket,
+				},
+			})
+		}
 
 		slog.Info("transfer queued",
 			"transfer_id", t.ID,

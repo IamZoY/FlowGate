@@ -13,8 +13,7 @@ database:
   max_idle_connections: 2
 
 transfer:
-  worker_pool_size: 10
-  queue_capacity: 1000
+  worker_pool_size: 50
   # retry_attempts: 0    # default 0 (disabled). Set >0 to enable retries.
   # retry_backoff: "0s"  # base backoff between retries (exponential with jitter)
 

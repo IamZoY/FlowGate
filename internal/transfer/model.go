@@ -1,8 +1,6 @@
 package transfer
 
 import (
-	"errors"
-
 	"github.com/ali/flowgate/internal/group"
 	"github.com/ali/flowgate/internal/storage"
 )
@@ -18,15 +16,12 @@ const (
 	StatusRetrying   TransferStatus = "retrying"
 )
 
-// TransferJob is the unit of work placed on the jobs channel.
+// TransferJob is the unit of work placed on the queue.
 type TransferJob struct {
 	Transfer    *storage.Transfer
-	App         group.App
+	App         *group.App
 	ObjectKey   string
 	RetryCount  int // current attempt number (0 = first try)
 	MaxRetries  int // maximum retry attempts for this job
 	BackoffSecs int // delay in seconds between retries
 }
-
-// ErrQueueFull is returned by Manager.Enqueue when the jobs channel is at capacity.
-var ErrQueueFull = errors.New("transfer queue is full")

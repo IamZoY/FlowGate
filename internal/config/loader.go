@@ -69,10 +69,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Database.MaxIdleConnections = 2
 	}
 	if cfg.Transfer.WorkerPoolSize == 0 {
-		cfg.Transfer.WorkerPoolSize = 10
-	}
-	if cfg.Transfer.QueueCapacity == 0 {
-		cfg.Transfer.QueueCapacity = 1000
+		cfg.Transfer.WorkerPoolSize = 50
 	}
 	// RetryAttempts and RetryBackoff default to 0 (retries disabled).
 	// Set retry_attempts > 0 in config to enable retries.
@@ -101,10 +98,6 @@ func validate(cfg *Config) error {
 
 	if cfg.Transfer.WorkerPoolSize < 1 {
 		errs = append(errs, "transfer.worker_pool_size must be at least 1")
-	}
-
-	if cfg.Transfer.QueueCapacity < 1 {
-		errs = append(errs, "transfer.queue_capacity must be at least 1")
 	}
 
 	if (cfg.Server.TLSCert == "") != (cfg.Server.TLSKey == "") {

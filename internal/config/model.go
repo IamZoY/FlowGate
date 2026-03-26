@@ -58,7 +58,6 @@ type DatabaseConfig struct {
 // TransferConfig holds worker pool settings.
 type TransferConfig struct {
 	WorkerPoolSize int      `yaml:"worker_pool_size"`
-	QueueCapacity  int      `yaml:"queue_capacity"`
 	RetryAttempts  int      `yaml:"retry_attempts"`
 	RetryBackoff   Duration `yaml:"retry_backoff"`
 	DedupWindow    Duration `yaml:"dedup_window"`

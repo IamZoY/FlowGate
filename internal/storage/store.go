@@ -94,6 +94,7 @@ type Store interface {
 // SQLiteStore is the SQLite implementation of Store.
 type SQLiteStore struct {
 	db *sql.DB
+	bw *batchWriter
 }
 
 // NewSQLiteStore opens (or creates) the SQLite database at path and runs Migrate.
@@ -111,7 +112,7 @@ func NewSQLiteStore(path string, maxOpen, maxIdle int) (*SQLiteStore, error) {
 	if err := Migrate(db); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	return &SQLiteStore{db: db}, nil
+	return &SQLiteStore{db: db, bw: newBatchWriter(db)}, nil
 }
 
 func (s *SQLiteStore) Ping(ctx context.Context) error {
@@ -119,6 +120,7 @@ func (s *SQLiteStore) Ping(ctx context.Context) error {
 }
 
 func (s *SQLiteStore) Close() error {
+	s.bw.close()
 	return s.db.Close()
 }
 
@@ -306,7 +308,7 @@ func scanApp(row rowScanner) (*group.App, error) {
 // ── Transfer ──────────────────────────────────────────────────────────────────
 
 func (s *SQLiteStore) CreateTransfer(ctx context.Context, t *Transfer) error {
-	_, err := s.db.ExecContext(ctx,
+	return s.bw.exec(
 		`INSERT INTO transfers (
 			id, app_id, object_key, src_bucket, dst_bucket,
 			object_size, etag, status, error_message, bytes_transferred,
@@ -319,7 +321,6 @@ func (s *SQLiteStore) CreateTransfer(ctx context.Context, t *Transfer) error {
 		t.CreatedAt.Unix(),
 		t.RetryCount, t.MaxRetries, nullableUnix(t.NextRetryAt),
 	)
-	return err
 }
 
 func (s *SQLiteStore) GetTransfer(ctx context.Context, id string) (*Transfer, error) {
@@ -333,7 +334,7 @@ func (s *SQLiteStore) GetTransfer(ctx context.Context, id string) (*Transfer, er
 }
 
 func (s *SQLiteStore) UpdateTransfer(ctx context.Context, t *Transfer) error {
-	_, err := s.db.ExecContext(ctx,
+	return s.bw.exec(
 		`UPDATE transfers SET
 			status=?, error_message=?, bytes_transferred=?,
 			started_at=?, completed_at=?, duration_ms=?, etag=?,
@@ -344,7 +345,6 @@ func (s *SQLiteStore) UpdateTransfer(ctx context.Context, t *Transfer) error {
 		t.RetryCount, t.MaxRetries, nullableUnix(t.NextRetryAt),
 		t.ID,
 	)
-	return err
 }
 
 func (s *SQLiteStore) ListTransfers(ctx context.Context, opts ListTransfersOpts) ([]Transfer, int64, error) {

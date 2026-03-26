@@ -11,6 +11,17 @@ import (
 	"github.com/ali/flowgate/internal/storage"
 )
 
+const broadcastThrottle = 1000
+
+// broadcast sends a hub message only when the queue is short enough
+// that individual per-transfer events are useful to dashboard clients.
+// Under heavy load the 5-second stats broadcast provides visibility instead.
+func (m *manager) broadcast(msg hub.Message) {
+	if m.QueueDepth() <= broadcastThrottle {
+		m.hub.Broadcast(msg)
+	}
+}
+
 // process executes a single TransferJob: get → put → update DB → broadcast.
 func (m *manager) process(ctx context.Context, job TransferJob) {
 	t := job.Transfer
@@ -32,7 +43,7 @@ func (m *manager) process(ctx context.Context, job TransferJob) {
 		if err := m.store.UpdateTransfer(ctx, t); err != nil {
 			log.Error("update in_progress", "error", err)
 		}
-		m.hub.Broadcast(hub.Message{
+		m.broadcast(hub.Message{
 			Type:      hub.MsgTransferStarted,
 			Timestamp: now,
 			Payload: map[string]any{
@@ -67,7 +78,7 @@ func (m *manager) process(ctx context.Context, job TransferJob) {
 		"duration_ms", durationMs,
 		"bytes", t.ObjectSize,
 	)
-	m.hub.Broadcast(hub.Message{
+	m.broadcast(hub.Message{
 		Type:      hub.MsgTransferCompleted,
 		Timestamp: completed,
 		Payload: map[string]any{
@@ -144,7 +155,7 @@ func (m *manager) scheduleRetry(ctx context.Context, job TransferJob, cause erro
 		"delay", delay.Round(time.Millisecond),
 	)
 
-	m.hub.Broadcast(hub.Message{
+	m.broadcast(hub.Message{
 		Type:      hub.MsgTransferRetrying,
 		Timestamp: time.Now(),
 		Payload: map[string]any{
@@ -159,17 +170,13 @@ func (m *manager) scheduleRetry(ctx context.Context, job TransferJob, cause erro
 	})
 
 	time.AfterFunc(delay, func() {
-		// Reset transfer state for re-processing.
 		t.Status = StatusPending
 		t.ErrorMessage = ""
 		t.StartedAt = nil
 		t.CompletedAt = nil
 		t.NextRetryAt = nil
 
-		if err := m.Enqueue(job); err != nil {
-			log.Error("re-enqueue retry failed", "transfer_id", t.ID, "error", err)
-			m.fail(ctx, t, job.ObjectKey, fmt.Errorf("retry enqueue failed: %w (original: %s)", err, cause))
-		}
+		m.Enqueue(job)
 	})
 }
 
@@ -187,7 +194,7 @@ func (m *manager) fail(ctx context.Context, t *storage.Transfer, key string, cau
 	if err := m.store.UpdateTransfer(ctx, t); err != nil {
 		slog.Error("update failed status", "transfer_id", t.ID, "error", err)
 	}
-	m.hub.Broadcast(hub.Message{
+	m.broadcast(hub.Message{
 		Type:      hub.MsgTransferFailed,
 		Timestamp: completed,
 		Payload: map[string]any{
