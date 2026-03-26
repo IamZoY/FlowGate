@@ -121,6 +121,7 @@ func main() {
 	webhookHandler := webhook.NewHandler(store, mgr, h, encKey,
 		cfg.Transfer.RetryAttempts,
 		int(cfg.Transfer.RetryBackoff.Seconds()),
+		cfg.Transfer.DedupWindow.Duration,
 	)
 	api := dashboard.NewAPI(store, encKey, h)
 	webAssets, err := fs.Sub(web.Assets, "assets")

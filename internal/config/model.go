@@ -61,6 +61,7 @@ type TransferConfig struct {
 	QueueCapacity  int      `yaml:"queue_capacity"`
 	RetryAttempts  int      `yaml:"retry_attempts"`
 	RetryBackoff   Duration `yaml:"retry_backoff"`
+	DedupWindow    Duration `yaml:"dedup_window"`
 }
 
 // LoggingConfig holds slog settings.

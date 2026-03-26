@@ -76,6 +76,9 @@ func applyDefaults(cfg *Config) {
 	}
 	// RetryAttempts and RetryBackoff default to 0 (retries disabled).
 	// Set retry_attempts > 0 in config to enable retries.
+	if cfg.Transfer.DedupWindow.Duration == 0 {
+		cfg.Transfer.DedupWindow = Duration{60 * time.Second}
+	}
 	if cfg.Logging.Level == "" {
 		cfg.Logging.Level = "info"
 	}

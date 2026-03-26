@@ -2,7 +2,7 @@ package webhook
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -25,10 +25,11 @@ type Handler struct {
 	encKey            []byte // AES key for decrypting MinIO credentials
 	defaultMaxRetries int
 	defaultBackoffSec int
+	dedup             *deduper
 }
 
 // NewHandler creates a Handler wired to the given dependencies.
-func NewHandler(store storage.Store, manager transfer.Manager, h *hub.Hub, encKey []byte, defaultMaxRetries, defaultBackoffSec int) *Handler {
+func NewHandler(store storage.Store, manager transfer.Manager, h *hub.Hub, encKey []byte, defaultMaxRetries, defaultBackoffSec int, dedupWindow time.Duration) *Handler {
 	return &Handler{
 		store:             store,
 		manager:           manager,
@@ -36,6 +37,7 @@ func NewHandler(store storage.Store, manager transfer.Manager, h *hub.Hub, encKe
 		encKey:            encKey,
 		defaultMaxRetries: defaultMaxRetries,
 		defaultBackoffSec: defaultBackoffSec,
+		dedup:             newDeduper(dedupWindow),
 	}
 }
 
@@ -103,6 +105,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			objectKey = rawKey // fall back to raw if unescape fails
 		}
 
+		dedupKey := fmt.Sprintf("%s:%s", app.ID, objectKey)
+
+		// Fast path: in-memory dedup catches rapid-fire duplicates.
+		if h.dedup.IsDuplicate(dedupKey) {
+			slog.Debug("duplicate webhook skipped (in-memory)",
+				"app_id", app.ID, "object_key", objectKey)
+			continue
+		}
+
+		// Slow path: DB check covers restarts where in-memory map is empty.
+		if active, _ := h.store.HasActiveTransfer(r.Context(), app.ID, objectKey); active {
+			slog.Debug("duplicate webhook skipped (active transfer exists)",
+				"app_id", app.ID, "object_key", objectKey)
+			continue
+		}
+
 		// Persist a pending transfer record.
 		t := &storage.Transfer{
 			ID:         uuid.NewString(),
@@ -131,12 +149,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			BackoffSecs: backoffSec,
 		}
 		if err := h.manager.Enqueue(job); err != nil {
-			if errors.Is(err, transfer.ErrQueueFull) {
-				http.Error(w, "service unavailable: queue full", http.StatusServiceUnavailable)
-				return
-			}
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+			// Never return 503 to MinIO — it retries and creates a cascade.
+			// Mark the transfer as failed and return 202 to stop the loop.
+			slog.Warn("transfer queue full, marking failed",
+				"transfer_id", t.ID, "object_key", objectKey, "error", err)
+			now := time.Now()
+			t.Status = "failed"
+			t.ErrorMessage = "queue capacity exceeded"
+			t.CompletedAt = &now
+			_ = h.store.UpdateTransfer(r.Context(), t)
+			continue
 		}
 
 		// Notify dashboard clients.

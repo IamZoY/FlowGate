@@ -15,6 +15,9 @@ var schema002 string
 //go:embed 003_add_retry_columns.sql
 var schema003 string
 
+//go:embed 004_add_active_transfer_index.sql
+var schema004 string
+
 // Migrate applies all schema migrations to db in order.
 // It is idempotent: safe to call on every startup.
 func Migrate(db *sql.DB) error {
@@ -50,6 +53,12 @@ func Migrate(db *sql.DB) error {
 	if version < 3 {
 		if _, err := db.Exec(schema003); err != nil {
 			return fmt.Errorf("apply schema v3: %w", err)
+		}
+	}
+
+	if version < 4 {
+		if _, err := db.Exec(schema004); err != nil {
+			return fmt.Errorf("apply schema v4: %w", err)
 		}
 	}
 

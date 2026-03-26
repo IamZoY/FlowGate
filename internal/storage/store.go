@@ -83,6 +83,7 @@ type Store interface {
 	UpdateTransfer(ctx context.Context, t *Transfer) error
 	ListTransfers(ctx context.Context, opts ListTransfersOpts) ([]Transfer, int64, error)
 	GetStats(ctx context.Context, appID, groupID string) (*TransferStats, error)
+	HasActiveTransfer(ctx context.Context, appID, objectKey string) (bool, error)
 
 	// Liveness
 	Ping(ctx context.Context) error
@@ -97,7 +98,11 @@ type SQLiteStore struct {
 
 // NewSQLiteStore opens (or creates) the SQLite database at path and runs Migrate.
 func NewSQLiteStore(path string, maxOpen, maxIdle int) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite", path)
+	// Build DSN with per-connection pragmas so every connection in the pool
+	// gets WAL mode, foreign keys, and a generous busy_timeout.
+	// Without this, only the connection that runs Migrate() has the pragmas.
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(on)", path)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite %s: %w", path, err)
 	}
@@ -462,6 +467,19 @@ func (s *SQLiteStore) GetStats(ctx context.Context, appID, groupID string) (*Tra
 		stats.LastTransferAt = &t
 	}
 	return &stats, nil
+}
+
+func (s *SQLiteStore) HasActiveTransfer(ctx context.Context, appID, objectKey string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM transfers
+			WHERE app_id = ? AND object_key = ?
+			AND status IN ('pending', 'in_progress', 'retrying')
+		)`,
+		appID, objectKey,
+	).Scan(&exists)
+	return exists, err
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

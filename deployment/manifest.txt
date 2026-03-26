@@ -1,11 +1,11 @@
 FlowGate Deployment Manifest
 ================================
-Built by   : ali@alis-MacBook-Pro.local
-Build date : 2026-03-17T18:10:45Z
-Proxy image: flowgate:dev
+Built by   : ali@debian
+Build date : 2026-03-26T06:01:36Z
+Proxy image: flowgate:f68a95d
 MinIO image: ghcr.io/iamzoy/minio:release.2026-01-02t17-54-56z
 
 Images
 ------
-flowgate.tar.gz  6ccaf75bd4af13fe30e3d2d8fafd298c93074ec4abf02e9dfad8bf3c39b5807c
-minio.tar.gz        63ff16852242ac93dfa3ab54497de9e0ce20f07bf8aba591ac0f33463dd317cd
+flowgate.tar.gz  5292cd5d7f5431c90e4985b11850c52d224bb9d9b6c6915dad34d2730b189be6
+minio.tar.gz     8587b894afc6686ad81ab1c84c882f7d7376ceee415d6c4804cde50a59d1b9f2
