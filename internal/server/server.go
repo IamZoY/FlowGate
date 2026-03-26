@@ -8,9 +8,11 @@ import (
 	"github.com/ali/flowgate/internal/config"
 )
 
-// Server wraps http.Server with config-driven timeouts.
+// Server wraps http.Server with config-driven timeouts and optional TLS.
 type Server struct {
-	srv *http.Server
+	srv     *http.Server
+	tlsCert string
+	tlsKey  string
 }
 
 // New creates a Server bound to cfg.Host:cfg.Port with the given handler.
@@ -23,12 +25,22 @@ func New(cfg config.ServerConfig, handler http.Handler) *Server {
 			WriteTimeout: cfg.WriteTimeout.Duration,
 			IdleTimeout:  cfg.IdleTimeout.Duration,
 		},
+		tlsCert: cfg.TLSCert,
+		tlsKey:  cfg.TLSKey,
 	}
 }
 
-// Start calls ListenAndServe. It returns http.ErrServerClosed on graceful stop.
+// Start listens on the configured address. Uses TLS if cert and key are set.
 func (s *Server) Start() error {
+	if s.tlsCert != "" && s.tlsKey != "" {
+		return s.srv.ListenAndServeTLS(s.tlsCert, s.tlsKey)
+	}
 	return s.srv.ListenAndServe()
+}
+
+// TLSEnabled reports whether the server is configured to use TLS.
+func (s *Server) TLSEnabled() bool {
+	return s.tlsCert != "" && s.tlsKey != ""
 }
 
 // Shutdown gracefully drains connections using the provided context.

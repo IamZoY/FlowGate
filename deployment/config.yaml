@@ -1,6 +1,8 @@
 server:
   host: "0.0.0.0"
-  port: 8080
+  port: 8443
+  tls_cert: "/certs/flowgate.crt"
+  tls_key: "/certs/flowgate.key"
   read_timeout: "30s"
   write_timeout: "30s"
   idle_timeout: "120s"
@@ -13,8 +15,8 @@ database:
 transfer:
   worker_pool_size: 10
   queue_capacity: 1000
-  retry_attempts: 3
-  retry_backoff: "5s"
+  # retry_attempts: 0    # default 0 (disabled). Set >0 to enable retries.
+  # retry_backoff: "0s"  # base backoff between retries (exponential with jitter)
 
 logging:
   level: "info"

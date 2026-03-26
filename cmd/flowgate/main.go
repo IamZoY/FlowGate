@@ -137,8 +137,14 @@ func main() {
 	srv := server.New(cfg.Server, router)
 
 	go func() {
+		proto := "http"
+		if srv.TLSEnabled() {
+			proto = "https"
+		}
 		slog.Info("flowgate starting",
 			"addr", cfg.Server.Host+":"+itoa(cfg.Server.Port),
+			"tls", srv.TLSEnabled(),
+			"proto", proto,
 		)
 		if err := srv.Start(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server error", "error", err)

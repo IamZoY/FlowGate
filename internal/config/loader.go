@@ -104,6 +104,10 @@ func validate(cfg *Config) error {
 		errs = append(errs, "transfer.queue_capacity must be at least 1")
 	}
 
+	if (cfg.Server.TLSCert == "") != (cfg.Server.TLSKey == "") {
+		errs = append(errs, "server.tls_cert and server.tls_key must both be set or both be empty")
+	}
+
 	if len(errs) > 0 {
 		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}

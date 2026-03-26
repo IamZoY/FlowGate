@@ -41,6 +41,8 @@ type Config struct {
 type ServerConfig struct {
 	Host         string   `yaml:"host"`
 	Port         int      `yaml:"port"`
+	TLSCert      string   `yaml:"tls_cert"`
+	TLSKey       string   `yaml:"tls_key"`
 	ReadTimeout  Duration `yaml:"read_timeout"`
 	WriteTimeout Duration `yaml:"write_timeout"`
 	IdleTimeout  Duration `yaml:"idle_timeout"`

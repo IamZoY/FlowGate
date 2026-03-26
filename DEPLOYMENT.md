@@ -9,7 +9,7 @@ FlowGate is a lightweight S3 object transfer gateway. It receives webhook events
 MinIO Source  ──webhook──▶  FlowGate  ──S3 PutObject──▶  MinIO Destination
                               │
                          SQLite DB
-                         Web Dashboard (:8080)
+                         Web Dashboard (HTTPS :443)
 ```
 
 ---
@@ -25,6 +25,7 @@ MinIO Source  ──webhook──▶  FlowGate  ──S3 PutObject──▶  Min
 
 - Docker Engine 20+
 - Docker Compose v2 plugin (`docker compose`, not `docker-compose`)
+- `openssl` (auto-generates TLS certificates and SECRET_KEY)
 - Disk space: ~500MB for images + data volumes
 - No internet required after deployment
 
@@ -55,13 +56,13 @@ VERSION=1.0.0 bash build.sh
 ```
 deployment/
 ├── images/
-│   ├── flowgate.tar.gz      # Proxy Docker image (~5MB)
-│   └── minio.tar.gz            # MinIO Docker image (~47MB)
-├── docker-compose.yml           # Production compose (pre-loaded images, no build:)
-├── config.example.yaml          # Reference configuration
-├── .env.example                 # Environment variables template
-├── deploy.sh                    # Deployment script for the target host
-└── manifest.txt                 # Build metadata + SHA256 checksums
+│   ├── flowgate.tar.gz      # FlowGate Docker image (~5MB)
+│   └── minio.tar.gz         # MinIO Docker image (~47MB)
+├── docker-compose.yml       # Production compose (HTTPS, pre-loaded images)
+├── config.yaml              # Production config (TLS enabled, ready to use)
+├── .env                     # Environment variables (SECRET_KEY auto-generated)
+├── deploy.sh                # Fully automatic deployment script
+└── manifest.txt             # Build metadata + SHA256 checksums
 ```
 
 Package for transfer:
@@ -76,72 +77,32 @@ Transfer the tarball to the air-gapped host via USB, SCP, or any file transfer m
 
 ## 3. Deploying on the Target Host
 
-### 3a. Extract
-
 ```bash
 tar -xzf flowgate-deployment.tar.gz
 cd deployment
-```
-
-### 3b. Configure
-
-**Create config.yaml:**
-
-```bash
-cp config.example.yaml config.yaml
-```
-
-Key settings to review:
-
-| Setting | Default | Notes |
-|---------|---------|-------|
-| `server.port` | `8080` | Dashboard and webhook listener port |
-| `database.path` | `./flowgate.db` | Overridden by compose to `/data/flowgate.db` |
-| `transfer.worker_pool_size` | `10` | Concurrent transfer goroutines |
-| `transfer.queue_capacity` | `1000` | Max queued jobs (503 when full) |
-| `logging.level` | `info` | `debug`, `info`, `warn`, `error` |
-| `logging.format` | `json` | `json` or `text` |
-| `dashboard.auth_enabled` | `false` | Set to `true` in production |
-| `dashboard.username` | `admin` | Dashboard login (if auth enabled) |
-| `dashboard.password` | — | Set via `${DASH_PASSWORD}` env var |
-
-**Create .env:**
-
-```bash
-cp .env.example .env
-```
-
-**Required:**
-
-```bash
-# Generate a random 32-byte hex key
-openssl rand -hex 32
-```
-
-Set this as `SECRET_KEY` in `.env`. This key derives the AES-256-GCM encryption key used to protect MinIO credentials stored in SQLite.
-
-**IMPORTANT:** If you lose this key, all stored MinIO credentials become unrecoverable. Back it up securely.
-
-Optional `.env` settings:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SECRET_KEY` | *required* | AES master key |
-| `FLOWGATE_PORT` | `8080` | Host port mapping |
-| `LOG_LEVEL` | `info` | Override logging level |
-
-### 3c. Deploy
-
-```bash
 bash deploy.sh
 ```
 
-`deploy.sh` will:
-1. Verify Docker is running and config files exist
-2. Load Docker images from gzipped tarballs (`docker load`)
-3. Start services with `docker compose up -d`
-4. Wait for the health check to pass (up to 2 minutes)
-5. Print the dashboard URL
+`deploy.sh` automatically:
+1. Generates `SECRET_KEY` in `.env` (if still a placeholder)
+2. Generates self-signed TLS certificate + key in `certs/` (valid for 10 years)
+3. Loads Docker images from gzipped tarballs
+4. Starts services with `docker compose up -d`
+5. Waits for the health check to pass (up to 2 minutes)
+6. Prints the HTTPS dashboard URL
+
+**IMPORTANT:** After first run, back up your `.env` file — the `SECRET_KEY` is required to decrypt MinIO credentials stored in SQLite. If you lose it, all stored credentials become unrecoverable.
+
+### Optional Customization
+
+You can edit these files **before** running `deploy.sh`:
+
+| File | What to Change |
+|------|---------------|
+| `config.yaml` | Worker pool size, queue capacity, retry settings, logging |
+| `.env` | `FLOWGATE_PORT` (default: 443), `LOG_LEVEL` (default: info) |
+
+To run without TLS, remove or comment out `tls_cert` and `tls_key` in `config.yaml` and change the port to `8080`.
 
 ---
 
@@ -152,7 +113,7 @@ bash deploy.sh
 Groups are logical groupings for apps.
 
 ```bash
-PROXY=http://<host>:8080
+PROXY=https://<host>
 
 curl -s -X POST ${PROXY}/api/groups \
   -H 'Content-Type: application/json' \
@@ -225,7 +186,7 @@ mc alias set mysrc http://<source-minio>:9000 <access-key> <secret-key>
 **Step 2 — Register webhook target:**
 ```bash
 mc admin config set mysrc notify_webhook:<identifier> \
-  endpoint="http://<flowgate-host>:8080/webhook/<group-name>/<app-name>" \
+  endpoint="https://<flowgate-host>/webhook/<group-name>/<app-name>" \
   auth_token="<webhook_secret>"
 ```
 
@@ -286,7 +247,7 @@ Repeat steps 4a–4d for each source→destination pipeline. Each app gets its o
 
 ### Dashboard
 
-Open `http://<host>:8080` in a browser. The dashboard shows:
+Open `https://<host>` in a browser (accept the self-signed certificate warning). The dashboard shows:
 
 - **Stats bar:** Total transfers, success/failed counts, queued jobs, total bytes
 - **Live feed:** Real-time transfer events via WebSocket
@@ -295,7 +256,7 @@ Open `http://<host>:8080` in a browser. The dashboard shows:
 ### Health Check
 
 ```bash
-curl http://<host>:8080/health
+curl -k https://<host>/health
 # {"status":"ok","queue_depth":0}
 ```
 
@@ -304,7 +265,7 @@ A non-zero `queue_depth` means transfers are queued or in-progress.
 ### Stats API
 
 ```bash
-curl http://<host>:8080/api/stats
+curl -k https://<host>/api/stats
 ```
 
 Returns aggregate counts: `total_transfers`, `success_count`, `failed_count`, `in_progress_count`, `pending_count`, `total_bytes`, `avg_duration_ms`.
@@ -330,6 +291,7 @@ The production compose configures log rotation: max 50MB per file, 5 files.
 | SQLite database | Docker volume `flowgate-data` at `/data/flowgate.db` | All groups, apps, encrypted credentials, transfer history |
 | `.env` file | `deployment/.env` | SECRET_KEY (required to decrypt credentials) |
 | `config.yaml` | `deployment/config.yaml` | Service configuration |
+| TLS certificates | `deployment/certs/` | Self-signed cert + private key |
 
 ### Backup Procedure
 
@@ -377,12 +339,19 @@ tar -czf flowgate-deployment-1.1.0.tar.gz deployment/
 ### On the Target Host
 
 ```bash
-# Extract new package (overwrites images and scripts, NOT config)
+# Back up your config and secrets first
+cp deployment/.env deployment/.env.bak
+cp deployment/config.yaml deployment/config.yaml.bak
+
+# Extract new package (overwrites images and scripts)
 tar -xzf flowgate-deployment-1.1.0.tar.gz
 
 cd deployment
 
-# Keep your existing config.yaml and .env — do NOT overwrite them
+# Restore your config and secrets
+cp .env.bak .env
+cp config.yaml.bak config.yaml
+
 # deploy.sh loads new images and recreates containers
 bash deploy.sh
 ```
@@ -400,6 +369,8 @@ The SQLite database is in a Docker volume and survives container recreation. Sch
 | 401 Unauthorized on webhook | `auth_token` doesn't match `webhook_secret` | Re-get the secret via API, update MinIO config, restart MinIO |
 | 503 Service Unavailable | Transfer queue full | Increase `transfer.queue_capacity` or `transfer.worker_pool_size` in config.yaml |
 | Slow transfers | Worker pool too small | Increase `transfer.worker_pool_size` (default: 10) |
+| Browser certificate warning | Self-signed TLS certificate | Expected — add exception in browser or import `certs/flowgate.crt` |
+| Connection refused on port 443 | Port conflict or firewall | Check `FLOWGATE_PORT` in `.env`, verify no other service on 443 |
 | Dashboard not loading | Container not running or port blocked | `docker compose ps`, check firewall rules |
 | WebSocket disconnecting | Proxy restarting or network issue | Check proxy logs, verify health endpoint |
 
@@ -413,19 +384,19 @@ docker compose ps
 docker compose logs -f flowgate
 
 # Recent transfers
-curl -s http://<host>:8080/api/transfers?limit=10 | python3 -m json.tool
+curl -sk https://<host>/api/transfers?limit=10 | python3 -m json.tool
 
 # Failed transfers only
-curl -s "http://<host>:8080/api/transfers?status=failed" | python3 -m json.tool
+curl -sk "https://<host>/api/transfers?status=failed" | python3 -m json.tool
 
 # Stats
-curl -s http://<host>:8080/api/stats | python3 -m json.tool
+curl -sk https://<host>/api/stats | python3 -m json.tool
 
 # List all groups
-curl -s http://<host>:8080/api/groups | python3 -m json.tool
+curl -sk https://<host>/api/groups | python3 -m json.tool
 
 # List apps in a group
-curl -s http://<host>:8080/api/groups/<id>/apps | python3 -m json.tool
+curl -sk https://<host>/api/groups/<id>/apps | python3 -m json.tool
 ```
 
 ---

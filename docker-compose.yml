@@ -4,11 +4,11 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config.yaml:/config.yaml:ro
+      - ./config.yaml:/etc/flowgate/config.yaml:ro
       - flowgate-data:/data
     environment:
       SECRET_KEY: ${SECRET_KEY:-changeme_32_char_dev_key_0000000}
-    command: ["--config", "/config.yaml"]
+    # Config is baked into image; volume mount above overrides it.
     depends_on:
       - minio-src
       - minio-dst

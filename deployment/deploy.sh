@@ -1,38 +1,74 @@
 #!/usr/bin/env bash
 # =============================================================================
-# deploy.sh — run this on the air-gapped host
+# deploy.sh — run this on the target host
 #
-# Prerequisites on the target host:
-#   - Docker Engine installed (no internet needed after this)
-#   - docker compose plugin (v2)
+# Prerequisites:
+#   - Docker Engine + docker compose plugin (v2)
+#   - openssl (for auto-generating SECRET_KEY and TLS certificates)
 #
 # Steps:
 #   1. Copy the entire deployment/ folder to the host
-#   2. cp config.example.yaml config.yaml && edit config.yaml
-#   3. cp .env.example .env              && edit .env (set SECRET_KEY)
-#   4. bash deploy.sh
+#   2. bash deploy.sh    (auto-generates certs + SECRET_KEY)
 # =============================================================================
 
 set -euo pipefail
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'
-BOLD='\033[1m'; RESET='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 
 info()    { echo -e "${CYAN}==>${RESET} ${BOLD}$*${RESET}"; }
 success() { echo -e "${GREEN}✔${RESET}  $*"; }
+warn()    { echo -e "${YELLOW}⚠${RESET}  $*"; }
 die()     { echo -e "${RED}✘  $*${RESET}" >&2; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGES_DIR="${SCRIPT_DIR}/images"
+CERTS_DIR="${SCRIPT_DIR}/certs"
+ENV_FILE="${SCRIPT_DIR}/.env"
 
 # ── Pre-flight ────────────────────────────────────────────────────────────────
-command -v docker &>/dev/null || die "docker not found"
-docker info &>/dev/null       || die "Docker daemon not running"
+command -v docker   &>/dev/null || die "docker not found — install Docker first"
+docker info         &>/dev/null || die "Docker daemon not running"
+command -v openssl  &>/dev/null || die "openssl not found — required for certificate and key generation"
 
-[[ -f "${SCRIPT_DIR}/config.yaml" ]]  || die "config.yaml not found — copy config.example.yaml and edit it"
-[[ -f "${SCRIPT_DIR}/.env" ]]         || die ".env not found — copy .env.example and set SECRET_KEY"
-[[ -f "${IMAGES_DIR}/flowgate.tar.gz" ]] || die "images/flowgate.tar.gz not found"
-[[ -f "${IMAGES_DIR}/minio.tar.gz" ]]        || die "images/minio.tar.gz not found"
+[[ -f "${SCRIPT_DIR}/config.yaml" ]]        || die "config.yaml not found"
+[[ -f "${ENV_FILE}" ]]                       || die ".env not found"
+[[ -f "${IMAGES_DIR}/flowgate.tar.gz" ]]     || die "images/flowgate.tar.gz not found"
+
+# ── Auto-generate SECRET_KEY if placeholder ───────────────────────────────────
+if grep -q 'PLACEHOLDER_WILL_BE_AUTO_GENERATED' "${ENV_FILE}"; then
+    info "Generating SECRET_KEY"
+    NEW_KEY="$(openssl rand -hex 32)"
+    [[ -n "${NEW_KEY}" ]] || die "Failed to generate SECRET_KEY"
+    sed -i.bak "s/PLACEHOLDER_WILL_BE_AUTO_GENERATED/${NEW_KEY}/" "${ENV_FILE}"
+    rm -f "${ENV_FILE}.bak"
+    success "SECRET_KEY generated and saved to .env"
+    warn "IMPORTANT: Back up your .env file — losing SECRET_KEY makes encrypted data unrecoverable"
+fi
+
+# ── Generate self-signed TLS certificate if not present ───────────────────────
+if [[ ! -f "${CERTS_DIR}/flowgate.crt" ]] || [[ ! -f "${CERTS_DIR}/flowgate.key" ]]; then
+    info "Generating self-signed TLS certificate"
+    mkdir -p "${CERTS_DIR}"
+
+    # Detect primary IP address (Linux: hostname -I, macOS: ipconfig)
+    LOCAL_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || ipconfig getifaddr en0 2>/dev/null || echo '127.0.0.1')"
+
+    openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "${CERTS_DIR}/flowgate.key" \
+        -out "${CERTS_DIR}/flowgate.crt" \
+        -days 3650 \
+        -subj "/CN=flowgate" \
+        -addext "subjectAltName=DNS:localhost,DNS:flowgate,IP:127.0.0.1,IP:${LOCAL_IP}" \
+        2>/dev/null
+
+    chmod 600 "${CERTS_DIR}/flowgate.key"
+    chmod 644 "${CERTS_DIR}/flowgate.crt"
+    success "TLS certificate generated (valid for 10 years)"
+    success "  SANs: localhost, flowgate, 127.0.0.1, ${LOCAL_IP}"
+else
+    success "TLS certificates already present in certs/"
+fi
 
 # ── Load images ───────────────────────────────────────────────────────────────
 info "Loading Docker images (this may take a minute)"
@@ -41,9 +77,11 @@ info "  Loading flowgate"
 docker load < "${IMAGES_DIR}/flowgate.tar.gz"
 success "  flowgate loaded"
 
-info "  Loading minio"
-docker load < "${IMAGES_DIR}/minio.tar.gz"
-success "  minio loaded"
+if [[ -f "${IMAGES_DIR}/minio.tar.gz" ]]; then
+    info "  Loading minio"
+    docker load < "${IMAGES_DIR}/minio.tar.gz"
+    success "  minio loaded"
+fi
 
 # ── Start services ────────────────────────────────────────────────────────────
 info "Starting services with docker compose"
@@ -71,8 +109,11 @@ success "flowgate is healthy"
 echo ""
 echo -e "${GREEN}${BOLD}Deployment complete.${RESET}"
 echo ""
-PORT="$(grep FLOWGATE_PORT .env 2>/dev/null | cut -d= -f2 || echo 8080)"
-echo "  Dashboard : http://$(hostname -I | awk '{print $1}'):${PORT:-8080}"
-echo "  Health    : http://$(hostname -I | awk '{print $1}'):${PORT:-8080}/health"
+PORT="$(grep -v '^#' .env | grep FLOWGATE_PORT | cut -d= -f2 || echo 443)"
+PORT="${PORT:-443}"
+HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || ipconfig getifaddr en0 2>/dev/null || echo 'localhost')"
+
+echo "  Dashboard : https://${HOST_IP}:${PORT}"
+echo "  Health    : https://${HOST_IP}:${PORT}/health"
 echo "  Logs      : docker compose logs -f flowgate"
 echo ""
