@@ -6,6 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 
+	"github.com/ali/flowgate/internal/auth"
 	"github.com/ali/flowgate/internal/hub"
 	"github.com/ali/flowgate/internal/transfer"
 )
@@ -21,20 +22,32 @@ func NewRouter(
 	dashHandler http.Handler,
 	h *hub.Hub,
 	manager transfer.Manager,
+	authSvc *auth.Service,
 ) http.Handler {
 	r := chi.NewRouter()
 	r.Use(RequestID)
 	r.Use(Logger)
 	r.Use(Recoverer)
 
-	// Webhook ingest.
+	// Webhook ingest — authenticated by its own per-app token, not sessions.
 	r.Post("/webhook/{group}/{app}", webhookHandler.ServeHTTP)
 
-	// REST API.
-	r.Mount("/api", apiHandler)
+	// Auth endpoints (login/logout/session) — reachable without a session.
+	r.Mount("/api/auth", authSvc.Router())
+
+	// REST API — requires a session; mutations also require password confirmation.
+	r.Group(func(g chi.Router) {
+		g.Use(authSvc.RequireSession)
+		g.Use(authSvc.RequireConfirm)
+		g.Mount("/api", apiHandler)
+	})
 
 	// WebSocket live feed.
 	r.Get("/ws", func(w http.ResponseWriter, req *http.Request) {
+		if !authSvc.Authed(req) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		conn, err := upgrader.Upgrade(w, req, nil)
 		if err != nil {
 			return
@@ -45,8 +58,8 @@ func NewRouter(
 	// Health endpoint.
 	r.Get("/health", healthHandler(h, manager))
 
-	// SPA catch-all — must come last.
-	r.Mount("/", dashHandler)
+	// SPA catch-all — must come last. Unauthenticated browsers land on /login.
+	r.Mount("/", authSvc.ProtectPages(dashHandler))
 
 	return r
 }

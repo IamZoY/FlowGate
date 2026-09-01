@@ -435,11 +435,11 @@ func (s *SQLiteStore) GetStats(ctx context.Context, appID, groupID string) (*Tra
 	q := fmt.Sprintf(`
 		SELECT
 			COUNT(*)                                          AS total,
-			SUM(CASE WHEN status='success'     THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status='failed'      THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status='pending'     THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status='retrying'    THEN 1 ELSE 0 END),
+			COALESCE(SUM(CASE WHEN status='success'     THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status='failed'      THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status='pending'     THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status='retrying'    THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(bytes_transferred), 0),
 			COALESCE(AVG(CASE WHEN status='success' THEN duration_ms END), 0),
 			MAX(completed_at)

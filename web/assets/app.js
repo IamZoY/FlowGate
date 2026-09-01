@@ -1,19 +1,103 @@
 'use strict';
 
-const state = { groups: [], apps: [], selectedGroupId: null, ws: null };
+const state = { groups: [], apps: [], selectedGroupId: null, ws: null, authEnabled: false };
+
+// Sentinel returned by mutate() when the user cancels the password prompt.
+const CANCELLED = Symbol('cancelled');
 
 // ── API ────────────────────────────────────────────────────────────────────
-async function api(method, path, body) {
+async function api(method, path, body, confirmPw) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (confirmPw) opts.headers['X-Confirm-Password'] = confirmPw;
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch('/api' + path, opts);
-  if (!res.ok) throw new Error(await res.text());
+  if (res.status === 401) { location.href = '/login'; throw new Error('session expired'); }
+  if (!res.ok) {
+    const err = new Error(await res.text());
+    err.status = res.status;
+    throw err;
+  }
   if (res.status === 204) return null;
   return res.json();
 }
 
+// mutate() wraps every state-changing call: when auth is enabled it asks the
+// user to re-enter the admin password and retries until correct or cancelled.
+async function mutate(method, path, body, actionLabel) {
+  let errMsg = '';
+  for (;;) {
+    let pw = null;
+    if (state.authEnabled) {
+      pw = await askPassword(actionLabel, errMsg);
+      if (pw === null) return CANCELLED;
+    }
+    try {
+      return await api(method, path, body, pw);
+    } catch (e) {
+      if (state.authEnabled && (e.status === 403 || e.status === 428)) {
+        errMsg = 'Incorrect password — try again.';
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+async function initAuth() {
+  let s = null;
+  try { s = await (await fetch('/api/auth/session')).json(); } catch { /* server unreachable */ }
+  state.authEnabled = !!(s && s.auth_enabled);
+  if (state.authEnabled && !s.authenticated) { location.href = '/login'; return false; }
+  const btn = document.getElementById('btn-logout');
+  btn.hidden = !state.authEnabled;
+  btn.addEventListener('click', async () => {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    location.href = '/login';
+  });
+  return true;
+}
+
+function askPassword(actionLabel, errMsg) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('confirm-overlay');
+    const input = document.getElementById('confirm-password');
+    const errEl = document.getElementById('confirm-error');
+    const ok = document.getElementById('confirm-ok');
+    const cancel = document.getElementById('confirm-cancel');
+
+    document.getElementById('confirm-action').textContent =
+      actionLabel ? 'Enter the admin password to ' + actionLabel + '.' : 'Enter the admin password to continue.';
+    errEl.textContent = errMsg || '';
+    input.value = '';
+    overlay.classList.add('open');
+    input.focus();
+
+    function cleanup(result) {
+      overlay.classList.remove('open');
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKey);
+      resolve(result);
+    }
+    function onOk() {
+      if (!input.value) { errEl.textContent = 'Password required.'; return; }
+      cleanup(input.value);
+    }
+    function onCancel() { cleanup(null); }
+    function onKey(e) {
+      if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+      if (e.key === 'Escape') onCancel();
+    }
+    ok.addEventListener('click', onOk);
+    cancel.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKey);
+  });
+}
+
 // ── Bootstrap ──────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  if (!await initAuth()) return;
   document.getElementById('btn-new-group').addEventListener('click', showCreateGroupModal);
   document.getElementById('group-list').addEventListener('click', (e) => {
     const item = e.target.closest('.group-item');
@@ -65,7 +149,10 @@ function showCreateGroupModal() {
   `, async () => {
     const name = document.getElementById('f-group-name').value.trim();
     if (!name) return;
-    await api('POST', '/groups', { name, description: document.getElementById('f-group-desc').value });
+    const r = await mutate('POST', '/groups',
+      { name, description: document.getElementById('f-group-desc').value },
+      'create this group').catch(e => { alert(e.message); return CANCELLED; });
+    if (r === CANCELLED) return;
     closeModal();
     await loadGroups();
   }, 'Create');
@@ -78,10 +165,11 @@ function showEditGroupModal(groupId) {
     <div class="form-group"><label>Name</label><input id="f-group-name" value="${esc(grp.name)}" /></div>
     <div class="form-group"><label>Description</label><input id="f-group-desc" value="${esc(grp.description || '')}" /></div>
   `, async () => {
-    await api('PUT', '/groups/' + groupId, {
+    const r = await mutate('PUT', '/groups/' + groupId, {
       name: document.getElementById('f-group-name').value.trim(),
       description: document.getElementById('f-group-desc').value,
-    });
+    }, 'save group changes').catch(e => { alert(e.message); return CANCELLED; });
+    if (r === CANCELLED) return;
     closeModal();
     await loadGroups();
     if (state.selectedGroupId === groupId) {
@@ -93,7 +181,9 @@ function showEditGroupModal(groupId) {
 
 async function deleteGroup(id) {
   if (!confirm('Delete this group and all its apps?')) return;
-  await api('DELETE', '/groups/' + id).catch(e => alert(e.message));
+  const r = await mutate('DELETE', '/groups/' + id, null, 'delete this group')
+    .catch(e => { alert(e.message); return CANCELLED; });
+  if (r === CANCELLED) return;
   state.selectedGroupId = null;
   clearAppsPanel();
   await loadGroups();
@@ -238,7 +328,9 @@ function showCreateAppModal(groupId) {
     if (!body.name) return;
     body.src.secret_key = document.getElementById('f-src-secret').value;
     body.dst.secret_key = document.getElementById('f-dst-secret').value;
-    await api('POST', '/groups/' + groupId + '/apps', body).catch(e => alert(e.message));
+    const r = await mutate('POST', '/groups/' + groupId + '/apps', body, 'create this app')
+      .catch(e => { alert(e.message); return CANCELLED; });
+    if (r === CANCELLED) return;
     closeModal();
     await reloadCurrentGroup();
   }, 'Create App');
@@ -249,7 +341,9 @@ function showEditAppModal(appId) {
   if (!app) return;
   openModal('Edit App', appFormHTML(app), async () => {
     const body = collectAppForm();
-    await api('PUT', '/apps/' + appId, body).catch(e => { alert(e.message); return; });
+    const r = await mutate('PUT', '/apps/' + appId, body, 'save app changes')
+      .catch(e => { alert(e.message); return CANCELLED; });
+    if (r === CANCELLED) return;
     closeModal();
     await reloadCurrentGroup();
   }, 'Save');
@@ -281,13 +375,17 @@ function getAppName(appId) {
 }
 
 async function toggleApp(appId, enabled) {
-  await api('PUT', '/apps/' + appId, { enabled }).catch(e => alert(e.message));
+  const r = await mutate('PUT', '/apps/' + appId, { enabled }, (enabled ? 'enable' : 'disable') + ' this app')
+    .catch(e => { alert(e.message); return CANCELLED; });
+  if (r === CANCELLED) return;
   await reloadCurrentGroup();
 }
 
 async function deleteApp(appId, groupId) {
   if (!confirm('Delete this app?')) return;
-  await api('DELETE', '/apps/' + appId).catch(e => alert(e.message));
+  const r = await mutate('DELETE', '/apps/' + appId, null, 'delete this app')
+    .catch(e => { alert(e.message); return CANCELLED; });
+  if (r === CANCELLED) return;
   await reloadCurrentGroup();
 }
 

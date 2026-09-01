@@ -13,6 +13,7 @@ services:
       - flowgate-data:/data
     environment:
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env}
+      DASH_PASSWORD: ${DASH_PASSWORD:?DASH_PASSWORD must be set in .env}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     command: ["--config", "/etc/flowgate/config.yaml"]
     healthcheck:

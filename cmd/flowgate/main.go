@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ali/flowgate/internal/auth"
 	"github.com/ali/flowgate/internal/config"
 	"github.com/ali/flowgate/internal/dashboard"
 	"github.com/ali/flowgate/internal/hub"
@@ -123,6 +124,13 @@ func main() {
 		cfg.Transfer.DedupWindow.Duration,
 	)
 	api := dashboard.NewAPI(store, encKey, h)
+	authSvc := auth.NewService(
+		cfg.Dashboard.AuthEnabled,
+		cfg.Dashboard.Username,
+		cfg.Dashboard.Password,
+		cfg.Server.TLSCert != "",
+	)
+	slog.Info("dashboard auth", "enabled", cfg.Dashboard.AuthEnabled)
 	webAssets, err := fs.Sub(web.Assets, "assets")
 	if err != nil {
 		slog.Error("embed web assets", "error", err)
@@ -131,7 +139,7 @@ func main() {
 	dashHandler := dashboard.NewHandler(webAssets)
 
 	// 9. Router.
-	router := server.NewRouter(webhookHandler, api.Router(), dashHandler, h, mgr)
+	router := server.NewRouter(webhookHandler, api.Router(), dashHandler, h, mgr, authSvc)
 
 	// 10. HTTP server.
 	srv := server.New(cfg.Server, router)

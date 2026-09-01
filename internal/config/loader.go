@@ -82,6 +82,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Logging.Format == "" {
 		cfg.Logging.Format = "json"
 	}
+	if cfg.Dashboard.Username == "" {
+		cfg.Dashboard.Username = "admin"
+	}
 }
 
 func validate(cfg *Config) error {
@@ -102,6 +105,13 @@ func validate(cfg *Config) error {
 
 	if (cfg.Server.TLSCert == "") != (cfg.Server.TLSKey == "") {
 		errs = append(errs, "server.tls_cert and server.tls_key must both be set or both be empty")
+	}
+
+	if cfg.Dashboard.AuthEnabled {
+		pw := strings.TrimSpace(cfg.Dashboard.Password)
+		if pw == "" || strings.HasPrefix(pw, "${") {
+			errs = append(errs, "dashboard.password must be set when dashboard.auth_enabled is true (use the DASH_PASSWORD env var)")
+		}
 	}
 
 	if len(errs) > 0 {

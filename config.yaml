@@ -25,6 +25,6 @@ security:
 
 dashboard:
   enabled: true
-  auth_enabled: false
+  auth_enabled: true
   username: "admin"
   password: "${DASH_PASSWORD}"

@@ -47,6 +47,7 @@
       <div id="ws-dot"></div>
       <span id="ws-label">Connecting…</span>
     </div>
+    <button id="btn-logout" class="btn btn-secondary" hidden>Logout</button>
   </div>
 
   <!-- Content area -->
@@ -68,6 +69,20 @@
     </div>
     <div id="modal-body"></div>
     <div id="modal-footer"></div>
+  </div>
+</div>
+
+<!-- Password confirmation (stacks above the form modal) -->
+<div id="confirm-overlay">
+  <div id="confirm-box">
+    <h3>Confirm with password</h3>
+    <p id="confirm-action"></p>
+    <input id="confirm-password" type="password" placeholder="Admin password" autocomplete="current-password" />
+    <div id="confirm-error"></div>
+    <div id="confirm-actions">
+      <button class="btn btn-primary" id="confirm-ok">Confirm</button>
+      <button class="btn btn-secondary" id="confirm-cancel">Cancel</button>
+    </div>
   </div>
 </div>
 

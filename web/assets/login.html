@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlowGate — Sign in</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1e2433;
+      color: #e8eaf0;
+    }
+    .login-card {
+      width: 360px;
+      max-width: 92vw;
+      background: #2a3147;
+      border: 1px solid #2e3554;
+      border-radius: 12px;
+      padding: 32px 28px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.35);
+    }
+    .login-logo { font-size: 22px; font-weight: 700; text-align: center; }
+    .login-logo span { color: #4f8ef7; }
+    .login-tagline {
+      text-align: center; font-size: 12px; color: #8892aa;
+      margin: 4px 0 24px;
+    }
+    label {
+      display: block; font-size: 12px; font-weight: 600;
+      color: #8892aa; margin: 14px 0 4px;
+    }
+    input {
+      width: 100%; padding: 9px 11px;
+      border: 1px solid #3a4260; border-radius: 6px;
+      background: #1e2433; color: #e8eaf0; font-size: 14px;
+    }
+    input:focus { outline: none; border-color: #4f8ef7; }
+    button {
+      width: 100%; margin-top: 22px; padding: 10px;
+      background: #4f8ef7; border: none; border-radius: 6px;
+      color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    button:hover { opacity: .9; }
+    button:disabled { opacity: .5; cursor: default; }
+    #error {
+      margin-top: 14px; font-size: 13px; color: #ff8080;
+      text-align: center; min-height: 18px;
+    }
+  </style>
+</head>
+<body>
+  <form class="login-card" id="login-form">
+    <div class="login-logo">Flow<span>Gate</span></div>
+    <div class="login-tagline">S3 object transfer gateway</div>
+    <label for="username">Username</label>
+    <input id="username" autocomplete="username" autofocus />
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" />
+    <button type="submit" id="btn-login">Sign in</button>
+    <div id="error"></div>
+  </form>
+  <script>
+    'use strict';
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-login');
+      const errEl = document.getElementById('error');
+      errEl.textContent = '';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value,
+          }),
+        });
+        if (!res.ok) {
+          errEl.textContent = res.status === 401
+            ? 'Invalid username or password'
+            : 'Login failed (' + res.status + ')';
+          return;
+        }
+        location.href = '/';
+      } catch {
+        errEl.textContent = 'Cannot reach the server';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

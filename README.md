@@ -122,10 +122,17 @@ security:
 
 dashboard:
   enabled: true
-  auth_enabled: false
+  auth_enabled: true    # login page; all create/edit/delete actions also require password re-confirmation
   username: "admin"
   password: "${DASH_PASSWORD}"
 ```
+
+When `auth_enabled` is true:
+
+- The dashboard and REST API require a login (`/login` page, session cookie, 24 h sliding expiry).
+- Every mutating API call (`POST`/`PUT`/`DELETE`) must additionally re-send the admin password in the `X-Confirm-Password` header — the UI prompts for it automatically before any create, edit, enable/disable, or delete.
+- Webhook ingestion (`/webhook/...`) and `/health` are unaffected (webhooks use their own per-app token).
+- `deploy.sh` auto-generates `DASH_PASSWORD` in `.env` on first run and prints the login at the end.
 
 ## Usage
 

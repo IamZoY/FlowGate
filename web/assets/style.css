@@ -225,6 +225,39 @@ body {
 #modal-body { padding: 20px; }
 #modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
 
+/* Password confirmation dialog (above the form modal) */
+#confirm-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+#confirm-overlay.open { display: flex; }
+#confirm-box {
+  background: var(--card-bg);
+  border-radius: 12px;
+  width: 380px;
+  max-width: 92vw;
+  padding: 22px 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.25);
+}
+#confirm-box h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+#confirm-action { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+#confirm-box input {
+  width: 100%; padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px; font-size: 13px;
+}
+#confirm-box input:focus { outline: none; border-color: var(--accent); }
+#confirm-error { font-size: 12px; color: var(--danger); min-height: 16px; margin: 6px 0 8px; }
+#confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* Logout button in stats bar */
+#btn-logout { margin-left: 10px; }
+#btn-logout[hidden] { display: none; }
+
 /* Form fields */
 .form-group { margin-bottom: 14px; }
 .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-muted); }
